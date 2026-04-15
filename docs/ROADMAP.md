@@ -21,11 +21,11 @@
 - interactive wizard
 - remote host orchestration polish
 - bundle backup and restore
+- Xray to sing-box migration import
 - richer health checks
 
 ## v0.3
 
-- Xray to sing-box migration import
 - region-specific media profiles
 - client export packs
 - line-quality health checks

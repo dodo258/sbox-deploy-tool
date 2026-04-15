@@ -44,6 +44,7 @@ from .system_ops import (
     wait_for_service,
 )
 from .ui import info, ok, print_logo, section, warn
+from .xray_import import load_xray_reality_node
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -93,25 +94,78 @@ def _make_node(role: str, region: str, port: int, domain: str, name: str | None)
     )
 
 
-def _build_plan_from_args(args: argparse.Namespace) -> tuple[DeployPlan, str]:
-    validate_port(args.port)
-    validate_domain(args.domain)
-    server = args.server or detect_primary_ipv4()
-    node = _make_node(args.role, args.region, args.port, args.domain, args.name)
+def _build_streaming_dns(
+    role: str,
+    streaming_dns: str | None,
+    streaming_profile: str,
+    streaming_domains: str | None,
+    provider_label: str,
+) -> StreamingDnsSpec | None:
     dns = None
-    if args.role == "media":
-        if args.streaming_dns:
-            suffixes = get_profile(args.streaming_profile)
-            if args.streaming_domains:
-                suffixes = [part.strip() for part in args.streaming_domains.split(",") if part.strip()]
+    if role == "media":
+        if streaming_dns:
+            suffixes = get_profile(streaming_profile)
+            if streaming_domains:
+                suffixes = [part.strip() for part in streaming_domains.split(",") if part.strip()]
             dns = StreamingDnsSpec(
-                provider_label=args.provider_label,
-                dns_server=args.streaming_dns,
-                profile_name=args.streaming_profile,
+                provider_label=provider_label,
+                dns_server=streaming_dns,
+                profile_name=streaming_profile,
                 match_suffixes=suffixes,
             )
         else:
             warn("media role selected without --streaming-dns; node will behave like a normal node")
+    return dns
+
+
+def _resolve_server_address(server: str | None) -> str:
+    if server:
+        return server
+    try:
+        return detect_primary_ipv4()
+    except Exception:
+        warn("unable to detect primary IPv4 automatically; using <SERVER_IP> in exports")
+        return "<SERVER_IP>"
+
+
+def _build_plan_from_args(args: argparse.Namespace) -> tuple[DeployPlan, str]:
+    validate_port(args.port)
+    validate_domain(args.domain)
+    server = _resolve_server_address(args.server)
+    node = _make_node(args.role, args.region, args.port, args.domain, args.name)
+    dns = _build_streaming_dns(
+        args.role,
+        args.streaming_dns,
+        args.streaming_profile,
+        args.streaming_domains,
+        args.provider_label,
+    )
+    plan = DeployPlan(
+        install_root=Path(args.install_root),
+        binary_name=args.binary_name,
+        service_name=args.service_name or f"sing-box-{node.tag}",
+        node=node,
+        streaming_dns=dns,
+    )
+    return plan, server
+
+
+def _build_plan_from_xray(args: argparse.Namespace) -> tuple[DeployPlan, str]:
+    server = _resolve_server_address(args.server)
+    node_name = args.name or _default_name(args.role, args.region)
+    node = load_xray_reality_node(
+        Path(args.input),
+        name=node_name,
+        tag=node_name.lower().replace(" ", "-"),
+        role=args.role,
+    )
+    dns = _build_streaming_dns(
+        args.role,
+        args.streaming_dns,
+        args.streaming_profile,
+        args.streaming_domains,
+        args.provider_label,
+    )
     plan = DeployPlan(
         install_root=Path(args.install_root),
         binary_name=args.binary_name,
@@ -153,6 +207,45 @@ def _write_bundle(plan: DeployPlan, server: str) -> Path:
         + "\n"
     )
     return bundle_dir
+
+
+def _apply_plan(plan: DeployPlan, server: str, args: argparse.Namespace) -> int:
+    bundle_dir = _write_bundle(plan, server)
+    service_content = build_service(
+        plan.service_name,
+        plan.binary_name,
+        str(plan.install_root / f"{plan.node.tag}.json"),
+    )
+
+    install_config_dir = plan.install_root
+    install_config_dir.mkdir(parents=True, exist_ok=True)
+    final_config = install_config_dir / f"{plan.node.tag}.json"
+    final_service = Path("/etc/systemd/system") / f"{plan.service_name}.service"
+
+    backup = backup_paths(
+        plan.node.tag,
+        [final_config, final_service],
+        Path(args.backup_root),
+    )
+    info(f"backup: {backup}")
+
+    write_json(final_config, build_config(plan))
+    systemd_apply(plan.service_name, service_content, final_service)
+
+    if args.firewall:
+        allow_ports = {22, plan.node.listen_port, *detect_ssh_ports()}
+        allow_ports.update(parse_port_list(args.extra_allow_ports))
+        ensure_ufw_ports(sorted(allow_ports))
+        ok(f"firewall allowed tcp ports: {sorted(allow_ports)}")
+
+    active, listening = wait_for_service(plan.service_name, plan.node.listen_port)
+    _, enabled = systemd_status(plan.service_name)
+    exports = json.loads((bundle_dir / "exports.json").read_text())
+    info(f"service active={active} enabled={enabled} listening={listening}")
+    info(f"config path: {final_config}")
+    info(f"service path: {final_service}")
+    info(f"shadowrocket: {exports['shadowrocket_vless']}")
+    return 0
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -221,39 +314,7 @@ def cmd_deploy_local(args: argparse.Namespace) -> int:
         ok(f"sing-box ready: v{version}")
 
     plan, server = _build_plan_from_args(args)
-    bundle_dir = _write_bundle(plan, server)
-    config_path = bundle_dir / f"{plan.node.tag}.json"
-    service_content = build_service(plan.service_name, plan.binary_name, str(plan.install_root / f"{plan.node.tag}.json"))
-
-    install_config_dir = plan.install_root
-    install_config_dir.mkdir(parents=True, exist_ok=True)
-    final_config = install_config_dir / f"{plan.node.tag}.json"
-    final_service = Path("/etc/systemd/system") / f"{plan.service_name}.service"
-
-    backup = backup_paths(
-        plan.node.tag,
-        [final_config, final_service],
-        Path(args.backup_root),
-    )
-    info(f"backup: {backup}")
-
-    write_json(final_config, build_config(plan))
-    systemd_apply(plan.service_name, service_content, final_service)
-
-    if args.firewall:
-        allow_ports = {22, plan.node.listen_port, *detect_ssh_ports()}
-        allow_ports.update(parse_port_list(args.extra_allow_ports))
-        ensure_ufw_ports(sorted(allow_ports))
-        ok(f"firewall allowed tcp ports: {sorted(allow_ports)}")
-
-    active, listening = wait_for_service(plan.service_name, plan.node.listen_port)
-    _, enabled = systemd_status(plan.service_name)
-    exports = json.loads((bundle_dir / "exports.json").read_text())
-    info(f"service active={active} enabled={enabled} listening={listening}")
-    info(f"config path: {final_config}")
-    info(f"service path: {final_service}")
-    info(f"shadowrocket: {exports['shadowrocket_vless']}")
-    return 0
+    return _apply_plan(plan, server, args)
 
 
 def cmd_firewall(args: argparse.Namespace) -> int:
@@ -290,6 +351,41 @@ def cmd_enable_bbr(_: argparse.Namespace) -> int:
     status = enable_bbr()
     ok("bbr settings applied")
     _print_bbr_summary(status)
+    return 0
+
+
+def cmd_import_xray(args: argparse.Namespace) -> int:
+    section("Import Xray Reality")
+    plan, server = _build_plan_from_xray(args)
+    info(f"imported xray file: {args.input}")
+    info(f"node name: {plan.node.name}")
+    info(f"listen port: {plan.node.listen_port}")
+    info(f"server name: {plan.node.server_name}")
+    if args.deploy_local:
+        require_root()
+        if not args.skip_install_deps:
+            ensure_apt_dependencies(
+                [
+                    "ca-certificates",
+                    "curl",
+                    "tar",
+                    "gzip",
+                    "unzip",
+                    "openssl",
+                    "jq",
+                    "ufw",
+                    "python3",
+                    "python3-cryptography",
+                ]
+            )
+            ok("dependencies ready")
+        if not args.skip_install_singbox:
+            version = install_singbox(args.singbox_version)
+            ok(f"sing-box ready: v{version}")
+        return _apply_plan(plan, server, args)
+    bundle_dir = _write_bundle(plan, server)
+    ok(f"bundle written: {bundle_dir}")
+    info(f"exports: {bundle_dir / 'exports.json'}")
     return 0
 
 
@@ -455,18 +551,18 @@ def cmd_init(_: argparse.Namespace) -> int:
     print_logo()
     section("First Version Scope")
     info("supported: Ubuntu/Debian + VLESS Reality Vision + sing-box")
-    info("modes: wizard / deploy-local / media-dns node / domain probe / backup / restore / doctor")
+    info("modes: wizard / deploy-local / import-xray / domain probe / backup / restore / doctor")
     warn("online probe still depends on local network reachability")
     print("")
     print("Examples:")
     print("  sboxctl probe --region us")
     print("  sboxctl wizard")
-    print("  sboxctl deploy-local --role main --region jp --port 443 --domain www.example.com")
-    print("  sboxctl deploy-remote --host 203.0.113.10 --ssh-port 22 --ssh-user root --role main --region us --port 443 --domain www.example.com")
-    print("  sboxctl deploy-local --role media --region us --port 2443 --domain www.example.com --streaming-dns 138.2.89.178 --streaming-profile common-media")
+    print("  sboxctl deploy-local --role main --region us --port <PORT> --domain <REALITY_DOMAIN>")
+    print("  sboxctl deploy-local --role media --region us --port <PORT> --domain <REALITY_DOMAIN> --streaming-dns <DNS_ADDR>")
+    print("  sboxctl import-xray --input <XRAY_JSON> --role main --region us")
     print("  sboxctl bbr-status")
     print("  sudo sboxctl enable-bbr")
-    print("  sboxctl firewall --allow-ports 443,2443")
+    print("  sboxctl firewall --allow-ports <PORTS>")
     return 0
 
 
@@ -501,6 +597,28 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--binary-name", default="sing-box")
     gen.add_argument("--service-name")
     gen.set_defaults(func=cmd_generate)
+
+    import_xray = sub.add_parser("import-xray", help="import an existing xray reality config and generate a sing-box bundle")
+    import_xray.add_argument("--input", required=True)
+    import_xray.add_argument("--role", choices=["main", "media"], required=True)
+    import_xray.add_argument("--region", choices=["us", "jp", "sg"], required=True)
+    import_xray.add_argument("--server")
+    import_xray.add_argument("--name")
+    import_xray.add_argument("--streaming-dns")
+    import_xray.add_argument("--streaming-profile", choices=sorted(STREAMING_PROFILES), default="common-media")
+    import_xray.add_argument("--streaming-domains")
+    import_xray.add_argument("--provider-label", default="custom-streaming-dns")
+    import_xray.add_argument("--install-root", default="/etc/sing-box")
+    import_xray.add_argument("--binary-name", default="sing-box")
+    import_xray.add_argument("--service-name")
+    import_xray.add_argument("--backup-root", default=str(BACKUP_ROOT))
+    import_xray.add_argument("--singbox-version", default="latest")
+    import_xray.add_argument("--skip-install-deps", action="store_true")
+    import_xray.add_argument("--skip-install-singbox", action="store_true")
+    import_xray.add_argument("--deploy-local", action="store_true")
+    import_xray.add_argument("--firewall", action=argparse.BooleanOptionalAction, default=True)
+    import_xray.add_argument("--extra-allow-ports")
+    import_xray.set_defaults(func=cmd_import_xray)
 
     deps = sub.add_parser("install-deps", help="install required system dependencies")
     deps.set_defaults(func=cmd_install_deps)

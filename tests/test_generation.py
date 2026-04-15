@@ -7,12 +7,13 @@ from pathlib import Path
 from unittest import mock
 
 from sbox_tool.config_gen import build_config, build_service, write_json
-from sbox_tool.crypto import generate_reality_keys
+from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
 from sbox_tool.profiles import get_profile
 from sbox_tool.remote_ops import build_scp_base, render_prepare_remote_dir_command, render_remote_deploy_command
 from sbox_tool.system_ops import install_singbox, summarize_bbr_status
+from sbox_tool.xray_import import load_xray_reality_node
 
 
 class GenerationTests(unittest.TestCase):
@@ -48,7 +49,7 @@ class GenerationTests(unittest.TestCase):
             node=self.make_node("media", 2443),
             streaming_dns=StreamingDnsSpec(
                 provider_label="nf",
-                dns_server="138.2.89.178",
+                dns_server="192.0.2.53",
             ),
         )
         config = build_config(plan)
@@ -79,10 +80,10 @@ class GenerationTests(unittest.TestCase):
 
     def test_exports(self) -> None:
         node = self.make_node("main", 443)
-        url = export_vless_url("154.31.116.61", node)
-        self.assertIn("vless://11111111-1111-1111-1111-111111111111@154.31.116.61:443", url)
-        payload = export_mihomo_proxy("154.31.116.61", node)
-        self.assertEqual(payload["server"], "154.31.116.61")
+        url = export_vless_url("203.0.113.10", node)
+        self.assertIn("vless://11111111-1111-1111-1111-111111111111@203.0.113.10:443", url)
+        payload = export_mihomo_proxy("203.0.113.10", node)
+        self.assertEqual(payload["server"], "203.0.113.10")
         self.assertEqual(payload["reality-opts"]["short-id"], node.reality.short_id)
 
     def test_service_render(self) -> None:
@@ -126,6 +127,57 @@ class GenerationTests(unittest.TestCase):
         self.assertTrue(status["has_bbr"])
         self.assertTrue(status["enabled"])
         self.assertTrue(status["fq_ready"])
+
+    def test_reality_keys_from_existing(self) -> None:
+        original = generate_reality_keys()
+        recovered = reality_keys_from_existing(original.private_key, original.short_id)
+        self.assertEqual(recovered.private_key, original.private_key)
+        self.assertEqual(recovered.public_key, original.public_key)
+        self.assertEqual(recovered.short_id, original.short_id)
+
+    def test_load_xray_reality_node(self) -> None:
+        keys = generate_reality_keys()
+        payload = {
+            "inbounds": [
+                {
+                    "protocol": "vless",
+                    "port": 2443,
+                    "settings": {
+                        "clients": [
+                            {
+                                "id": "22222222-2222-2222-2222-222222222222",
+                                "flow": "xtls-rprx-vision",
+                                "email": "media-user",
+                            }
+                        ]
+                    },
+                    "streamSettings": {
+                        "network": "tcp",
+                        "security": "reality",
+                        "realitySettings": {
+                            "serverNames": ["media.example.net"],
+                            "privateKey": keys.private_key,
+                            "shortIds": [keys.short_id],
+                        },
+                    },
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "xray.json"
+            path.write_text(json.dumps(payload))
+            node = load_xray_reality_node(
+                path,
+                name="US-media",
+                tag="us-media",
+                role="media",
+            )
+        self.assertEqual(node.listen_port, 2443)
+        self.assertEqual(node.uuid, "22222222-2222-2222-2222-222222222222")
+        self.assertEqual(node.server_name, "media.example.net")
+        self.assertEqual(node.reality.private_key, keys.private_key)
+        self.assertEqual(node.reality.public_key, keys.public_key)
+        self.assertEqual(node.reality.short_id, keys.short_id)
 
 
 if __name__ == "__main__":

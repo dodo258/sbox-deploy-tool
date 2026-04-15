@@ -1,263 +1,116 @@
-# Usage Guide
+# 使用说明
 
-## 1. Choose a deployment path
+这份文档只保留最常用的内容。
 
-There are three practical ways to use this tool:
+## 1. 一键启动
 
-- raw-link bootstrap on the server
-- local deployment from a cloned repository
-- remote deployment from another machine
-
-### Recommended: raw-link bootstrap on the server
-
-SSH to the target server first, then run:
+先 SSH 登录到目标服务器，再执行：
 
 ```bash
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh)
 ```
 
-This path is intended for beginners.
+这是推荐入口。
 
-### Local deployment from a cloned repository
+## 2. 交互流程里你主要会填什么
 
-Use this when you are already logged into the target server.
+脚本会逐步要求你填写这些信息：
+
+- 节点类型
+- 地区标记
+- 监听端口
+- Reality 伪装域名
+- 节点名称
+- 是否启用防火墙处理
+
+如果你选择的是“流媒体专用节点”，还会继续让你填写：
+
+- 你的流媒体 DNS 地址
+- 使用内置流媒体域名集合，还是自定义域名后缀
+
+## 3. 流媒体 DNS
+
+支持输入格式：
+
+- `IP`
+- `IP:PORT`
+- `https://...`
+- `tls://...`
+- `quic://...`
+
+脚本会把匹配到的流媒体域名交给这条 DNS 处理，其它普通域名仍然走本地解析。
+
+## 4. 防火墙
+
+脚本的防火墙逻辑默认是安全模式：
+
+- 永远保留 `22/tcp`
+- 永远保留当前检测到的 SSH 端口
+- 自动放行当前节点端口
+- 可额外放行你自己指定的端口
+
+如果后面想单独调整，可以执行：
 
 ```bash
-sudo ./install.sh
+sudo ./bin/sboxctl firewall --allow-ports <端口列表> --show-status
 ```
 
-or:
+## 5. 常用命令
+
+查看命令概览：
 
 ```bash
-sudo ./bin/sboxctl deploy-local ...
+./bin/sboxctl init
 ```
 
-### Remote deployment
-
-Use this when you want to run the tool from your own machine and push it to a server through SSH.
-
-```bash
-./bin/sboxctl deploy-remote ...
-```
-
-`deploy-remote` packages the current project, uploads it with `scp`, unpacks it on the target host, and then runs `deploy-local` there.
-
-Authentication choices:
-
-- recommended: `--identity-file ~/.ssh/id_ed25519`
-- optional: `--ssh-password your-password`
-
-If you use `--ssh-password`, your local machine must have `sshpass` installed.
-
-## 2. Probe a Reality target domain
+Reality 域名探测：
 
 ```bash
 ./bin/sboxctl probe --region us
-./bin/sboxctl probe --region jp
-./bin/sboxctl probe --region sg
 ```
 
-Look for domains that satisfy:
-
-- `tls13=True`
-- `h2=True`
-- HTTP status `200-399`
-- lower `ttfb`
-
-## 3. Deploy a main node
-
-Example:
+从旧 Xray 配置导入生成 sing-box bundle：
 
 ```bash
-sudo ./bin/sboxctl deploy-local \
-  --role main \
-  --region us \
-  --port 443 \
-  --domain www.uline.com \
-  --name US-MAIN \
-  --service-name sing-box-us-main
+./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <us|jp|sg>
 ```
 
-What this does:
-
-- installs dependencies if needed
-- installs sing-box if needed
-- generates new Reality keys
-- writes config to `/etc/sing-box/us-main.json`
-- writes systemd unit to `/etc/systemd/system/sing-box-us-main.service`
-- enables and restarts the service
-- creates a backup before overwrite
-- updates UFW if firewall mode is enabled
-
-## 4. Deploy a media DNS node
-
-Example:
+查看系统、服务、端口、BBR 状态：
 
 ```bash
-sudo ./bin/sboxctl deploy-local \
-  --role media \
-  --region us \
-  --port 2443 \
-  --domain www.uline.com \
-  --name US-MEDIA \
-  --service-name sing-box-us-media \
-  --streaming-dns 138.2.89.178 \
-  --streaming-profile common-media
+./bin/sboxctl doctor --services <服务名> --ports <端口列表>
 ```
 
-This mode:
-
-- enables route-based sniffing
-- sends matching streaming domains to the user-supplied DNS server
-- leaves other domains on the local resolver
-
-## 5. Custom streaming DNS profiles
-
-Built-in profiles:
-
-- `common-media`
-- `netflix`
-- `disney`
-- `max`
-- `primevideo`
-- `hulu`
-
-Custom override:
-
-```bash
-sudo ./bin/sboxctl deploy-local \
-  --role media \
-  --region us \
-  --port 2443 \
-  --domain www.uline.com \
-  --name CUSTOM-MEDIA \
-  --streaming-dns tls://dns.example.com \
-  --streaming-domains netflix.com,nflxvideo.net,disneyplus.com
-```
-
-## 6. Remote deployment example
-
-```bash
-./bin/sboxctl deploy-remote \
-  --host 203.0.113.10 \
-  --ssh-user root \
-  --ssh-port 22 \
-  --identity-file ~/.ssh/id_ed25519 \
-  --role main \
-  --region us \
-  --port 443 \
-  --domain www.uline.com \
-  --name US-MAIN
-```
-
-For a media node:
-
-```bash
-./bin/sboxctl deploy-remote \
-  --host 203.0.113.10 \
-  --ssh-user root \
-  --ssh-port 22 \
-  --identity-file ~/.ssh/id_ed25519 \
-  --role media \
-  --region us \
-  --port 2443 \
-  --domain www.uline.com \
-  --name US-MEDIA \
-  --streaming-dns 138.2.89.178 \
-  --streaming-profile common-media
-```
-
-Password-based example:
-
-```bash
-./bin/sboxctl deploy-remote \
-  --host 203.0.113.10 \
-  --ssh-user root \
-  --ssh-port 22 \
-  --ssh-password your-password \
-  --role main \
-  --region us \
-  --port 443 \
-  --domain www.uline.com \
-  --name US-MAIN
-```
-
-## 7. Firewall management
-
-If you want to adjust UFW separately:
-
-```bash
-sudo ./bin/sboxctl firewall --allow-ports 443,2443 --show-status
-```
-
-This command always preserves:
-
-- `22/tcp`
-- detected SSH ports on the current server
-
-## 8. Backup and restore
-
-Create a backup:
-
-```bash
-sudo ./bin/sboxctl backup \
-  --label before-change \
-  --paths /etc/sing-box/us-main.json,/etc/systemd/system/sing-box-us-main.service
-```
-
-Restore a backup:
-
-```bash
-sudo ./bin/sboxctl restore \
-  --archive /var/backups/sboxctl/before-change-20260415-120000.tar.gz \
-  --destination /root/restore-output
-```
-
-## 9. Check current state
-
-```bash
-./bin/sboxctl doctor --services sing-box-us-main,sing-box-us-media --ports 443,2443
-```
-
-What `doctor` shows now:
-
-- OS name
-- kernel version
-- primary IPv4
-- installed sing-box version
-- SSH ports
-- UFW status
-- BBR current state
-- service status
-- listening port status
-
-## 10. BBR
-
-Show current BBR state:
+查看 BBR 状态：
 
 ```bash
 ./bin/sboxctl bbr-status
 ```
 
-Enable BBR and `fq`:
+启用 BBR：
 
 ```bash
 sudo ./bin/sboxctl enable-bbr
 ```
 
-This writes:
+## 6. 备份与恢复
 
-- `/etc/sysctl.d/99-sboxctl-bbr.conf`
+脚本在覆盖配置前会自动备份。
 
-and then runs:
+如果你要手动备份：
 
-- `sysctl --system`
+```bash
+sudo ./bin/sboxctl backup --label <标签> --paths <文件路径列表>
+```
 
-## 11. Client imports
+如果你要手动恢复：
 
-Each deployment bundle includes:
+```bash
+sudo ./bin/sboxctl restore --archive <备份文件> --destination <恢复目录>
+```
 
-- a `vless://` link for Shadowrocket-style clients
-- a Mihomo proxy fragment
+## 7. 说明
 
-The files are written into the local `output/<tag>/` directory when you run `generate` or `deploy-local` from that machine.
+- 首页文档不再展示具体服务器信息
+- 不再展示固定示例 IP、端口、优选域名
+- 高阶玩家如需自行部署，可直接阅读源码或自行改命令

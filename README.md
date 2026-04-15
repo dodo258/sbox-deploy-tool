@@ -1,190 +1,130 @@
-# SBox Deploy Tool
+# dodo258 / SBox Deploy Tool
 
-`SBox Deploy Tool` is a sing-box deployment tool for people who want a cleaner replacement for large Xray shell scripts.
+一个面向 `Ubuntu / Debian` 服务器的 `sing-box` 一键部署工具。
 
-It focuses on two practical node types:
+目标很直接：
 
-- a normal `VLESS + Reality + Vision` node
-- a media-focused node that sends selected streaming domains to a user-supplied DNS unlock service
+- 用户先连上自己的 SSH 服务器
+- 执行一条命令
+- 按提示填写端口、Reality 伪装域名、流媒体 DNS
+- 自动完成依赖安装、sing-box 安装、systemd、备份、防火墙处理
 
-## What it does
+这不是“大而全”的协议合集工具。当前只做一件事：
 
-- installs missing Debian/Ubuntu dependencies on fresh servers
-- installs sing-box automatically
-- generates Reality keys automatically
-- deploys sing-box config and systemd unit files
-- creates backups before overwrite
-- exports standard `vless://` and Mihomo proxy fragments
-- manages UFW with SSH-safe defaults
-- checks and enables BBR
-- probes candidate Reality domains
-- supports both local deployment and remote deployment over `ssh/scp`
+- `VLESS + Reality + Vision`
 
-## Scope
+## 中文使用方式
 
-- protocol: `VLESS + Reality + Vision`
-- system: `Ubuntu / Debian`
-- roles: `main` and `media`
-
-## Repository layout
-
-- `bin/sboxctl`: launcher
-- `install.sh`: bootstrap entry for running directly on a server
-- `lib/sbox_tool/`: Python implementation
-- `templates/candidate_domains.json`: starter Reality candidate pools
-- `tests/`: unit tests
-- `docs/USAGE.md`: step-by-step usage guide
-- `docs/ROADMAP.md`: next-stage planning
-
-## Fast start
-
-### Option A: run directly on the target server with a raw link
+先 SSH 登录到服务器，然后执行：
 
 ```bash
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh)
 ```
 
-This is the primary beginner path.
+执行后脚本会进入交互流程。
 
-### Option B: clone the repository on the target server
+## 这个工具会帮你做什么
 
-```bash
-git clone https://github.com/dodo258/sbox-deploy-tool.git
-cd sbox-deploy-tool
-sudo ./install.sh
-```
+- 自动安装缺少的基础依赖
+- 自动安装 `sing-box`
+- 自动生成或导入 Reality 参数
+- 生成 sing-box 配置和 systemd 服务
+- 覆盖前自动备份旧文件
+- 可选启用并检查 `BBR`
+- 自动处理防火墙
 
-### Option C: deploy remotely from your local machine
+## 流媒体 DNS 的使用方式
 
-```bash
-git clone https://github.com/dodo258/sbox-deploy-tool.git
-cd sbox-deploy-tool
-./bin/sboxctl deploy-remote \
-  --host 203.0.113.10 \
-  --ssh-port 22 \
-  --ssh-user root \
-  --identity-file ~/.ssh/id_ed25519 \
-  --role main \
-  --region us \
-  --port 443 \
-  --domain www.uline.com \
-  --name US-MAIN
-```
+如果你要做“流媒体专用节点”，脚本会要求你填写自己的流媒体 DNS。
 
-## Common commands
+支持这几种格式：
 
-Show overview:
+- 纯 IP
+- `IP:PORT`
+- `https://...`
+- `tls://...`
+- `quic://...`
+
+脚本只会把你指定的流媒体域名交给这个 DNS 解析，不会粗暴改掉整台机器的所有 DNS 请求。
+
+## 防火墙规则
+
+脚本内置了防火墙保护逻辑：
+
+- 强制保留 `22/tcp`
+- 强制保留当前服务器检测到的 SSH 端口
+- 放行你部署节点使用的端口
+- 你也可以额外填写自己要放行的端口
+
+这样做是为了避免用户把自己锁死在服务器外面。
+
+## 常用命令
+
+查看工具说明：
 
 ```bash
 ./bin/sboxctl init
 ```
 
-Probe Reality candidates:
+查看 Reality 域名探测结果：
 
 ```bash
 ./bin/sboxctl probe --region us
 ```
 
-Deploy a main node locally:
+从旧的 Xray Reality 配置导入：
 
 ```bash
-./bin/sboxctl deploy-local \
-  --role main \
-  --region jp \
-  --port 443 \
-  --domain www.u-can.co.jp \
-  --name JP-DMIT
+./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <us|jp|sg>
 ```
 
-Deploy a media node locally:
+查看当前系统和服务状态：
 
 ```bash
-./bin/sboxctl deploy-local \
-  --role media \
-  --region us \
-  --port 2443 \
-  --domain www.uline.com \
-  --name US-Streaming-SG \
-  --streaming-dns 138.2.89.178 \
-  --provider-label my-dns-vendor \
-  --streaming-profile common-media
+./bin/sboxctl doctor --services <服务名> --ports <端口列表>
 ```
 
-Apply firewall rules manually:
-
-```bash
-./bin/sboxctl firewall --allow-ports 443,2443 --show-status
-```
-
-Inspect service and port state:
-
-```bash
-./bin/sboxctl doctor --services sing-box-us-main,sing-box-us-media --ports 443,2443
-```
-
-Show BBR state:
+查看 BBR 状态：
 
 ```bash
 ./bin/sboxctl bbr-status
 ```
 
-Enable BBR:
+启用 BBR：
 
 ```bash
 sudo ./bin/sboxctl enable-bbr
 ```
 
-## Firewall behavior
+单独调整防火墙：
 
-When firewall handling is enabled, the tool always preserves:
+```bash
+sudo ./bin/sboxctl firewall --allow-ports <端口列表> --show-status
+```
 
-- `22/tcp`
-- SSH ports detected from the current server
-- the node listen port
-- optional extra ports supplied by the user
+## 适合谁
 
-This is deliberate. A deployment tool that closes SSH is not acceptable.
+适合：
 
-## Streaming DNS behavior
+- 刚买 VPS，想尽快部署 sing-box 的用户
+- 需要流媒体专用节点的用户
+- 不想手动处理 systemd、备份、防火墙、BBR 的用户
 
-The tool does not hardcode a DNS unlock provider.
+不适合：
 
-Users supply their own DNS address and choose either:
+- 只想手搓全部配置的高级用户
+- 需要一堆杂协议混装的人
 
-- a built-in streaming profile
-- or their own suffix list with `--streaming-domains`
+## 仓库说明
 
-Built-in profiles:
+- `bootstrap.sh`：服务器端一键入口
+- `install.sh`：本地启动入口
+- `bin/sboxctl`：CLI 入口
+- `docs/USAGE.md`：中文简版使用说明
+- `docs/ROADMAP.md`：后续规划
 
-- `common-media`
-- `netflix`
-- `disney`
-- `max`
-- `primevideo`
-- `hulu`
+## 说明
 
-Accepted streaming DNS formats:
-
-- `138.2.89.178`
-- `138.2.89.178:5353`
-- `https://dns.example.com/dns-query`
-- `tls://dns.example.com`
-- `quic://dns.example.com`
-
-## Notes
-
-- `probe` depends on the current machine's outbound network and DNS reachability.
-- `deploy-local` is intended to run directly on the target server as `root`.
-- `deploy-remote` assumes `ssh/scp` access from the current machine.
-- `bootstrap.sh` is the raw-link entry for server-side one-command installation.
-- `deploy-remote` supports either:
-  - key-based SSH with `--identity-file`
-  - password-based SSH with `--ssh-password`, which requires local `sshpass`
-- generated bundles are placed under `output/` locally, but the repository ignores that directory by default.
-
-## More docs
-
-See:
-
-- `docs/USAGE.md`
-- `docs/ROADMAP.md`
+- 首页只保留新手最需要看到的内容
+- 更细的高级能力会继续保留在代码里，但不会堆在首页
+- 如果你只是正常使用，一般只需要记住那条 raw 一键命令
