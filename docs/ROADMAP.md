@@ -12,6 +12,7 @@
 - local deploy
 - remote deploy over `ssh/scp`
 - firewall manager
+- BBR status and enable
 - dependency bootstrap
 - unit tests
 
@@ -19,8 +20,8 @@
 
 - interactive wizard
 - remote host orchestration polish
-- BBR checks
 - bundle backup and restore
+- richer health checks
 
 ## v0.3
 

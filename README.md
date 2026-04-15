@@ -16,6 +16,7 @@ It focuses on two practical node types:
 - creates backups before overwrite
 - exports standard `vless://` and Mihomo proxy fragments
 - manages UFW with SSH-safe defaults
+- checks and enables BBR
 - probes candidate Reality domains
 - supports both local deployment and remote deployment over `ssh/scp`
 
@@ -119,6 +120,18 @@ Inspect service and port state:
 
 ```bash
 ./bin/sboxctl doctor --services sing-box-us-main,sing-box-us-media --ports 443,2443
+```
+
+Show BBR state:
+
+```bash
+./bin/sboxctl bbr-status
+```
+
+Enable BBR:
+
+```bash
+sudo ./bin/sboxctl enable-bbr
 ```
 
 ## Firewall behavior

@@ -12,7 +12,7 @@ from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
 from sbox_tool.profiles import get_profile
 from sbox_tool.remote_ops import build_scp_base, render_prepare_remote_dir_command, render_remote_deploy_command
-from sbox_tool.system_ops import install_singbox
+from sbox_tool.system_ops import install_singbox, summarize_bbr_status
 
 
 class GenerationTests(unittest.TestCase):
@@ -120,6 +120,12 @@ class GenerationTests(unittest.TestCase):
     def test_render_prepare_remote_dir_command(self) -> None:
         command = render_prepare_remote_dir_command("/root/sboxctl-release")
         self.assertEqual(command, "mkdir -p /root/sboxctl-release")
+
+    def test_summarize_bbr_status(self) -> None:
+        status = summarize_bbr_status("bbr", "reno cubic bbr", "fq")
+        self.assertTrue(status["has_bbr"])
+        self.assertTrue(status["enabled"])
+        self.assertTrue(status["fq_ready"])
 
 
 if __name__ == "__main__":

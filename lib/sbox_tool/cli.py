@@ -22,12 +22,16 @@ from .remote_ops import (
 )
 from .system_ops import (
     backup_paths,
+    bbr_status,
     detect_os,
     detect_primary_ipv4,
     detect_ssh_ports,
+    enable_bbr,
     ensure_apt_dependencies,
     ensure_ufw_ports,
     install_singbox,
+    installed_singbox_version,
+    kernel_release,
     parse_port_list,
     port_is_listening,
     require_root,
@@ -264,6 +268,31 @@ def cmd_firewall(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_bbr_summary(status: dict[str, str | bool]) -> None:
+    print(f"bbr_current={status['current']}")
+    print(f"bbr_available={status['available']}")
+    print(f"default_qdisc={status['qdisc']}")
+    print(f"bbr_has_support={status['has_bbr']}")
+    print(f"bbr_enabled={status['enabled']}")
+    print(f"bbr_fq_ready={status['fq_ready']}")
+
+
+def cmd_bbr_status(_: argparse.Namespace) -> int:
+    section("BBR Status")
+    print(f"kernel={kernel_release()}")
+    _print_bbr_summary(bbr_status())
+    return 0
+
+
+def cmd_enable_bbr(_: argparse.Namespace) -> int:
+    section("Enable BBR")
+    require_root()
+    status = enable_bbr()
+    ok("bbr settings applied")
+    _print_bbr_summary(status)
+    return 0
+
+
 def _remote_deploy_args(args: argparse.Namespace) -> list[str]:
     deploy_args = [
         "--role",
@@ -342,8 +371,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     section("Doctor")
     os_info = detect_os()
     info(f"os: {os_info.get('PRETTY_NAME', 'unknown')}")
+    print(f"kernel={kernel_release()}")
+    primary_ipv4 = "unavailable"
+    try:
+        primary_ipv4 = detect_primary_ipv4()
+    except Exception:
+        pass
+    print(f"primary_ipv4={primary_ipv4}")
+    print(f"sing_box_version={installed_singbox_version() or 'not-installed'}")
     print(f"ssh_ports={detect_ssh_ports()}")
     print(f"ufw_status={ufw_status().splitlines()[0] if ufw_status() else 'unknown'}")
+    _print_bbr_summary(bbr_status())
     service_names = [part.strip() for part in args.services.split(",") if part.strip()]
     for service in service_names:
         active, enabled = systemd_status(service)
@@ -426,6 +464,8 @@ def cmd_init(_: argparse.Namespace) -> int:
     print("  sboxctl deploy-local --role main --region jp --port 443 --domain www.example.com")
     print("  sboxctl deploy-remote --host 203.0.113.10 --ssh-port 22 --ssh-user root --role main --region us --port 443 --domain www.example.com")
     print("  sboxctl deploy-local --role media --region us --port 2443 --domain www.example.com --streaming-dns 138.2.89.178 --streaming-profile common-media")
+    print("  sboxctl bbr-status")
+    print("  sudo sboxctl enable-bbr")
     print("  sboxctl firewall --allow-ports 443,2443")
     return 0
 
@@ -527,6 +567,12 @@ def build_parser() -> argparse.ArgumentParser:
     firewall.add_argument("--allow-ports", default="")
     firewall.add_argument("--show-status", action="store_true")
     firewall.set_defaults(func=cmd_firewall)
+
+    bbr_show = sub.add_parser("bbr-status", help="show kernel BBR state")
+    bbr_show.set_defaults(func=cmd_bbr_status)
+
+    bbr_enable = sub.add_parser("enable-bbr", help="enable BBR and fq through sysctl")
+    bbr_enable.set_defaults(func=cmd_enable_bbr)
 
     backup = sub.add_parser("backup", help="create a tar.gz backup")
     backup.add_argument("--label", required=True)

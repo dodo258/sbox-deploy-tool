@@ -40,12 +40,23 @@ def detect_os() -> dict[str, str]:
     return data
 
 
+def kernel_release() -> str:
+    return platform.release()
+
+
 def ensure_apt_dependencies(packages: list[str]) -> None:
     require_root()
     if shutil.which("apt-get") is None:
         raise CommandError("apt-get not found; first version supports Debian/Ubuntu only")
     run(["apt-get", "update"])
     run(["apt-get", "install", "-y", *packages])
+
+
+def read_sysctl_value(key: str) -> str:
+    if shutil.which("sysctl") is None:
+        return ""
+    completed = run(["sysctl", "-n", key], check=False)
+    return (completed.stdout or "").strip()
 
 
 def arch_slug() -> str:
@@ -162,6 +173,45 @@ def validate_domain(domain: str) -> None:
     pattern = r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$"
     if not re.fullmatch(pattern, domain):
         raise CommandError(f"invalid domain: {domain}")
+
+
+def summarize_bbr_status(current: str, available: str, qdisc: str) -> dict[str, str | bool]:
+    available_set = {item.strip() for item in available.split() if item.strip()}
+    return {
+        "current": current or "unknown",
+        "available": available or "unknown",
+        "qdisc": qdisc or "unknown",
+        "has_bbr": "bbr" in available_set,
+        "enabled": current == "bbr" and "bbr" in available_set,
+        "fq_ready": qdisc == "fq",
+    }
+
+
+def bbr_status() -> dict[str, str | bool]:
+    current = read_sysctl_value("net.ipv4.tcp_congestion_control")
+    available = read_sysctl_value("net.ipv4.tcp_available_congestion_control")
+    qdisc = read_sysctl_value("net.core.default_qdisc")
+    return summarize_bbr_status(current, available, qdisc)
+
+
+def enable_bbr(sysctl_conf: Path = Path("/etc/sysctl.d/99-sboxctl-bbr.conf")) -> dict[str, str | bool]:
+    require_root()
+    if shutil.which("modprobe") is not None:
+        run(["modprobe", "tcp_bbr"], check=False)
+    sysctl_conf.write_text(
+        "\n".join(
+            [
+                "net.core.default_qdisc=fq",
+                "net.ipv4.tcp_congestion_control=bbr",
+                "",
+            ]
+        )
+    )
+    run(["sysctl", "--system"])
+    status = bbr_status()
+    if not status["has_bbr"]:
+        raise CommandError("kernel does not report bbr support after applying sysctl")
+    return status
 
 
 def ensure_ufw_ports(ports: list[int]) -> None:

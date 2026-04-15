@@ -219,7 +219,41 @@ sudo ./bin/sboxctl restore \
 ./bin/sboxctl doctor --services sing-box-us-main,sing-box-us-media --ports 443,2443
 ```
 
-## 10. Client imports
+What `doctor` shows now:
+
+- OS name
+- kernel version
+- primary IPv4
+- installed sing-box version
+- SSH ports
+- UFW status
+- BBR current state
+- service status
+- listening port status
+
+## 10. BBR
+
+Show current BBR state:
+
+```bash
+./bin/sboxctl bbr-status
+```
+
+Enable BBR and `fq`:
+
+```bash
+sudo ./bin/sboxctl enable-bbr
+```
+
+This writes:
+
+- `/etc/sysctl.d/99-sboxctl-bbr.conf`
+
+and then runs:
+
+- `sysctl --system`
+
+## 11. Client imports
 
 Each deployment bundle includes:
 
