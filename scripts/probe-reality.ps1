@@ -1,5 +1,7 @@
 param(
-    [string]$Region = "us"
+    [string]$Region = "us",
+    [string]$Domains,
+    [switch]$ListRegions
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,10 +34,18 @@ try {
         exit 1
     }
     $env:PYTHONPATH = Join-Path $rootDir.FullName "lib"
-    if ($pythonCmd.Count -gt 1) {
-        & $pythonCmd[0] $pythonCmd[1] -m sbox_tool.cli probe --region $Region
+    $probeArgs = @("-m", "sbox_tool.cli", "probe")
+    if ($ListRegions) {
+        $probeArgs += "--list-regions"
+    } elseif ($Domains) {
+        $probeArgs += @("--domains", $Domains)
     } else {
-        & $pythonCmd[0] -m sbox_tool.cli probe --region $Region
+        $probeArgs += @("--region", $Region)
+    }
+    if ($pythonCmd.Count -gt 1) {
+        & $pythonCmd[0] $pythonCmd[1] $probeArgs
+    } else {
+        & $pythonCmd[0] $probeArgs
     }
 }
 finally {

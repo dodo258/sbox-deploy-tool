@@ -40,13 +40,23 @@ Reality 域名优选不应该在服务器上跑，而应该在你自己的本地
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) us
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) eu
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) sea
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --list-regions
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --domains www.example.com,www.example.net
 ```
 
 ### Windows PowerShell
 
 ```powershell
 irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -Region eu
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ListRegions
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -Domains 'www.example.com,www.example.net'
 ```
+
+内置候选池已经扩到 `us / eu / uk / de / fr / jp / kr / hk / tw / sg / sea / oceania / latam / africa / middle-east / in`。  
+如果你的机器地区不在这些内置池里，直接用 `--domains` 自己传候选域名列表。
 
 优选好以后，再把域名填回服务器端一键脚本。
 
@@ -128,7 +138,7 @@ sudo ./bin/sboxctl firewall --show-status
 从旧 `xray` 配置导入：
 
 ```bash
-./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <us|jp|sg> --backend sing-box
+./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LABEL> --backend sing-box
 ```
 
 ## 6. 仓库结构

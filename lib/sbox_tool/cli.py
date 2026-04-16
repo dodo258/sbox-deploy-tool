@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config_gen import build_config, build_manifest, build_service, write_json
 from .crypto import generate_reality_keys
-from .domain_probe import load_candidates, rank_domains
+from .domain_probe import available_regions, load_candidates, parse_domain_list, rank_domains
 from .exports import export_mihomo_proxy, export_vless_url
 from .models import BackendType, DeployPlan, NodeSpec, RealityKeys, StreamingDnsSpec
 from .profiles import STREAMING_PROFILES, get_profile
@@ -66,6 +66,13 @@ BACKUP_ROOT = Path("/var/backups/sboxctl")
 def _default_name(role: str, region: str, backend: BackendType) -> str:
     suffix = "main" if role == "main" else "media"
     return f"{region.upper()}-{backend}-{suffix}"
+
+
+def _normalize_region(region: str) -> str:
+    token = region.strip().lower()
+    if not token:
+        raise CommandError("region label cannot be empty")
+    return token
 
 
 def _resolve_server_address(server: str | None) -> str:
@@ -133,7 +140,8 @@ def _build_plan_from_args(args: argparse.Namespace) -> tuple[DeployPlan, str]:
     validate_domain(args.domain)
     backend: BackendType = args.backend
     server = _resolve_server_address(args.server)
-    node = _make_node(args.role, args.region, args.port, args.domain, args.name, backend)
+    region = _normalize_region(args.region)
+    node = _make_node(args.role, region, args.port, args.domain, args.name, backend)
     streaming_dns = _build_streaming_dns(
         backend,
         bool(args.enable_streaming_dns),
@@ -159,7 +167,8 @@ def _build_plan_from_args(args: argparse.Namespace) -> tuple[DeployPlan, str]:
 def _build_plan_from_xray(args: argparse.Namespace) -> tuple[DeployPlan, str]:
     backend: BackendType = args.backend
     server = _resolve_server_address(args.server)
-    node_name = args.name or _default_name(args.role, args.region, backend)
+    region = _normalize_region(args.region)
+    node_name = args.name or _default_name(args.role, region, backend)
     node = load_xray_reality_node(
         Path(args.input),
         name=node_name,
@@ -315,9 +324,13 @@ def _print_probe_help() -> None:
     section("Reality Local Probe")
     print("macOS / Linux:")
     print("  bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) us")
+    print("  bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --list-regions")
+    print("  bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --domains www.example.com,www.example.net")
     print("")
     print("Windows PowerShell:")
     print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex")
+    print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ListRegions")
+    print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -Domains 'www.example.com,www.example.net'")
     print("")
     print("先在本地电脑优选，再把域名填回服务器端向导。")
 
@@ -325,9 +338,22 @@ def _print_probe_help() -> None:
 def cmd_probe(args: argparse.Namespace) -> int:
     section("Reality Domain Probe")
     pools = load_candidates()
-    domains = pools.get(args.region, [])
+    if args.list_regions:
+        print("available regions:")
+        for region in available_regions():
+            print(f"  - {region}")
+        return 0
+    if args.domains:
+        domains = parse_domain_list(args.domains)
+    else:
+        region = _normalize_region(args.region or "")
+        domains = pools.get(region, [])
+        if not domains:
+            print(f"No candidates for region={region}")
+            print(f"Available regions: {', '.join(available_regions())}")
+            return 1
     if not domains:
-        print(f"No candidates for region={args.region}")
+        print("No domains provided")
         return 1
     results = rank_domains(domains, timeout=args.timeout)
     for item in results[: args.limit]:
@@ -514,7 +540,8 @@ def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
 
 
 def _prompt_region() -> str:
-    return _prompt_choice("region [us/jp/sg] (default us): ", {"us", "jp", "sg"}, "us")
+    raw = input("region label (example: us / eu / sea / latam / africa, default us): ").strip().lower()
+    return raw or "us"
 
 
 def _prompt_streaming_profile() -> tuple[str, str | None]:
@@ -746,7 +773,9 @@ def build_parser() -> argparse.ArgumentParser:
     menu.set_defaults(func=cmd_menu)
 
     probe = sub.add_parser("probe", help="probe candidate reality domains")
-    probe.add_argument("--region", choices=["us", "jp", "sg"], required=True)
+    probe.add_argument("--region")
+    probe.add_argument("--domains", help="comma-separated domain list for custom probing")
+    probe.add_argument("--list-regions", action="store_true")
     probe.add_argument("--timeout", type=int, default=6)
     probe.add_argument("--limit", type=int, default=8)
     probe.set_defaults(func=cmd_probe)
@@ -754,7 +783,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate = sub.add_parser("generate", help="generate config, service and exports")
     generate.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")
     generate.add_argument("--role", choices=["main", "media"], required=True)
-    generate.add_argument("--region", choices=["us", "jp", "sg"], required=True)
+    generate.add_argument("--region", required=True)
     generate.add_argument("--server")
     generate.add_argument("--port", type=int, required=True)
     generate.add_argument("--domain", required=True)
@@ -772,7 +801,7 @@ def build_parser() -> argparse.ArgumentParser:
     deploy = sub.add_parser("deploy-local", help="deploy on the current server")
     deploy.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")
     deploy.add_argument("--role", choices=["main", "media"], required=True)
-    deploy.add_argument("--region", choices=["us", "jp", "sg"], required=True)
+    deploy.add_argument("--region", required=True)
     deploy.add_argument("--server")
     deploy.add_argument("--port", type=int, required=True)
     deploy.add_argument("--domain", required=True)
@@ -797,7 +826,7 @@ def build_parser() -> argparse.ArgumentParser:
     import_xray.add_argument("--input", required=True)
     import_xray.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")
     import_xray.add_argument("--role", choices=["main", "media"], required=True)
-    import_xray.add_argument("--region", choices=["us", "jp", "sg"], required=True)
+    import_xray.add_argument("--region", required=True)
     import_xray.add_argument("--server")
     import_xray.add_argument("--name")
     import_xray.add_argument("--enable-streaming-dns", action="store_true")
@@ -826,7 +855,7 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_remote.add_argument("--remote-dir", default="/root/sboxctl-release")
     deploy_remote.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")
     deploy_remote.add_argument("--role", choices=["main", "media"], required=True)
-    deploy_remote.add_argument("--region", choices=["us", "jp", "sg"], required=True)
+    deploy_remote.add_argument("--region", required=True)
     deploy_remote.add_argument("--port", type=int, required=True)
     deploy_remote.add_argument("--domain", required=True)
     deploy_remote.add_argument("--name")

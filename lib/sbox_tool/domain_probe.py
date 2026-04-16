@@ -42,6 +42,14 @@ def load_candidates() -> dict[str, list[str]]:
     return json.loads(CANDIDATES_FILE.read_text())
 
 
+def available_regions() -> list[str]:
+    return sorted(load_candidates().keys())
+
+
+def parse_domain_list(raw: str) -> list[str]:
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 def probe_domain(domain: str, timeout: int = 6) -> ProbeResult:
     openssl_cmd = [
         "openssl",

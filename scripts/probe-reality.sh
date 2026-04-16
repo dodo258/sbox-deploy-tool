@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REGION="${1:-us}"
 REPO_SLUG="${SBOXCTL_REPO_SLUG:-dodo258/sbox-deploy-tool}"
 REPO_REF="${SBOXCTL_REPO_REF:-main}"
 ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/refs/heads/${REPO_REF}.tar.gz"
@@ -34,4 +33,7 @@ if [[ -z "${ROOT_DIR}" ]]; then
 fi
 
 export PYTHONPATH="${ROOT_DIR}/lib"
-exec python3 -m sbox_tool.cli probe --region "${REGION}"
+if [[ $# -eq 0 ]]; then
+  exec python3 -m sbox_tool.cli probe --region us
+fi
+exec python3 -m sbox_tool.cli probe "$@"

@@ -134,7 +134,7 @@ sudo ./bin/sboxctl menu
 从旧 `xray` 配置导入：
 
 ```bash
-./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <us|jp|sg> --backend sing-box
+./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LABEL> --backend sing-box
 ```
 
 ## 七、本地域名优选
@@ -145,12 +145,22 @@ Reality 域名优选应在本地电脑执行，而不是在服务器执行。
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) us
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) eu
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) sea
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --list-regions
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --domains www.example.com,www.example.net
 ```
 
 ### Windows PowerShell
 
 ```powershell
 irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -Region eu
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ListRegions
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -Domains 'www.example.com,www.example.net'
 ```
+
+内置候选池已经覆盖 `us / eu / uk / de / fr / jp / kr / hk / tw / sg / sea / oceania / latam / africa / middle-east / in`。  
+如果你的服务器是别的地区，直接用 `--domains` 自己传候选域名列表即可。
 
 优选完成后，把结果填回服务器端向导即可。

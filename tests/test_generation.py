@@ -9,6 +9,7 @@ from unittest import mock
 from sbox_tool.config_gen import build_config, build_service, write_json
 from sbox_tool.cli import _build_streaming_dns
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
+from sbox_tool.domain_probe import available_regions, parse_domain_list
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
 from sbox_tool.profiles import get_profile
@@ -168,6 +169,12 @@ class GenerationTests(unittest.TestCase):
             path = Path(tmp) / "iptables.v4"
             path.write_text(_render_iptables_rules([22, 8443], ipv6=False))
             self.assertEqual(load_firewall_ports(path), [22, 8443])
+
+    def test_available_regions_and_domain_parse(self) -> None:
+        regions = available_regions()
+        self.assertIn("eu", regions)
+        self.assertIn("latam", regions)
+        self.assertEqual(parse_domain_list("a.example.com, b.example.com"), ["a.example.com", "b.example.com"])
 
     def test_reality_keys_from_existing(self) -> None:
         original = generate_reality_keys()

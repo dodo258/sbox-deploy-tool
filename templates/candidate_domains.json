@@ -9,6 +9,35 @@
     "www.lowes.com",
     "www.target.com"
   ],
+  "eu": [
+    "www.ikea.com",
+    "www.dhl.com",
+    "www.decathlon.com",
+    "www.zalando.com",
+    "www.booking.com",
+    "www.farnell.com"
+  ],
+  "uk": [
+    "www.argos.co.uk",
+    "www.currys.co.uk",
+    "www.boots.com",
+    "www.screwfix.com",
+    "www.johnlewis.com"
+  ],
+  "de": [
+    "www.mediamarkt.de",
+    "www.saturn.de",
+    "www.otto.de",
+    "www.notebooksbilliger.de",
+    "www.bauhaus.info"
+  ],
+  "fr": [
+    "www.fnac.com",
+    "www.darty.com",
+    "www.boulanger.com",
+    "www.castorama.fr",
+    "www.leroymerlin.fr"
+  ],
   "jp": [
     "www.yodobashi.com",
     "www.biccamera.com",
@@ -18,11 +47,74 @@
     "www.uniqlo.com",
     "www.jcb.co.jp"
   ],
+  "kr": [
+    "www.gmarket.co.kr",
+    "www.coupang.com",
+    "www.11st.co.kr",
+    "www.ssg.com",
+    "www.lotteon.com"
+  ],
+  "hk": [
+    "www.fortress.com.hk",
+    "www.broadwaylifestyle.com",
+    "www.hktvmall.com",
+    "www.watsons.com.hk",
+    "www.yohohongkong.com"
+  ],
+  "tw": [
+    "24h.pchome.com.tw",
+    "www.momoshop.com.tw",
+    "www.ruten.com.tw",
+    "www.etmall.com.tw",
+    "www.books.com.tw"
+  ],
   "sg": [
     "www.fairprice.com.sg",
     "www.courts.com.sg",
     "www.razer.com",
     "www.starhub.com",
     "www.singtel.com"
+  ],
+  "sea": [
+    "www.lazada.com",
+    "shopee.sg",
+    "www.grab.com",
+    "www.airasia.com",
+    "www.propertyguru.com.sg"
+  ],
+  "oceania": [
+    "www.jbhifi.com.au",
+    "www.officeworks.com.au",
+    "www.bunnings.com.au",
+    "www.harveynorman.com.au",
+    "www.thewarehouse.co.nz"
+  ],
+  "latam": [
+    "www.mercadolibre.com",
+    "www.magazineluiza.com.br",
+    "www.falabella.com",
+    "www.americanas.com.br",
+    "www.exito.com"
+  ],
+  "africa": [
+    "www.takealot.com",
+    "www.makro.co.za",
+    "www.superbalist.com",
+    "www.jumia.com.ng",
+    "www.konga.com"
+  ],
+  "middle-east": [
+    "www.noon.com",
+    "www.extra.com",
+    "www.jarir.com",
+    "www.virginmegastore.ae",
+    "www.luluhypermarket.com"
+  ],
+  "in": [
+    "www.flipkart.com",
+    "www.croma.com",
+    "www.reliancedigital.in",
+    "www.tatacliq.com",
+    "www.bigbasket.com"
   ]
 }
