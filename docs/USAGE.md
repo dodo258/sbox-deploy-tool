@@ -137,9 +137,8 @@ sudo ./bin/sboxctl menu
 ./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LABEL> --backend sing-box
 ```
 
-## 七、本地域名优选
+## 七、Reality 域名选择
 
-Reality 域名优选应在本地电脑执行，而不是在服务器执行。  
-脚本会根据服务器 IP 自动匹配内置地区池，服务器端部署流程再直接给出推荐域名编号，让用户只选 `1 / 2 / 3`。
+部署流程会根据服务器地区自动匹配内置候选池，并直接给出推荐域名编号，让用户只选 `1 / 2 / 3`。
 
 对外默认只开放内置地区池，不让普通用户手填自定义域名。
