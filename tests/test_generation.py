@@ -12,7 +12,7 @@ from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
 from sbox_tool.profiles import get_profile
 from sbox_tool.remote_ops import build_scp_base, render_prepare_remote_dir_command, render_remote_deploy_command
-from sbox_tool.system_ops import install_singbox, summarize_bbr_status
+from sbox_tool.system_ops import _render_iptables_rules, install_singbox, load_firewall_ports, summarize_bbr_status
 from sbox_tool.xray_import import load_xray_reality_node
 
 
@@ -151,6 +151,18 @@ class GenerationTests(unittest.TestCase):
         self.assertTrue(status["has_bbr"])
         self.assertTrue(status["enabled"])
         self.assertTrue(status["fq_ready"])
+
+    def test_render_iptables_rules(self) -> None:
+        rules = _render_iptables_rules([22, 443], ipv6=False)
+        self.assertIn("-A INPUT -p tcp --dport 22 -j ACCEPT", rules)
+        self.assertIn("-A INPUT -p tcp --dport 443 -j ACCEPT", rules)
+        self.assertIn("-A INPUT -p icmp -j ACCEPT", rules)
+
+    def test_load_firewall_ports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "iptables.v4"
+            path.write_text(_render_iptables_rules([22, 8443], ipv6=False))
+            self.assertEqual(load_firewall_ports(path), [22, 8443])
 
     def test_reality_keys_from_existing(self) -> None:
         original = generate_reality_keys()

@@ -22,6 +22,7 @@ from .remote_ops import (
 )
 from .system_ops import (
     CommandError,
+    FIREWALL_SERVICE_NAME,
     MANIFEST_ROOT,
     backup_paths,
     bbr_status,
@@ -34,9 +35,10 @@ from .system_ops import (
     detect_primary_ipv4,
     detect_ssh_ports,
     enable_bbr,
-    enforce_ufw_tcp_allowlist,
+    enforce_firewall_tcp_allowlist,
     ensure_apt_dependencies,
     ensure_bbr_enabled,
+    firewall_status,
     install_backend,
     installed_backend_version,
     kernel_release,
@@ -47,7 +49,6 @@ from .system_ops import (
     restore_backup,
     systemd_apply,
     systemd_status,
-    ufw_status,
     validate_domain,
     validate_port,
     wait_for_service,
@@ -81,14 +82,7 @@ def _ensure_dependencies() -> None:
     ensure_apt_dependencies(
         [
             "ca-certificates",
-            "curl",
-            "tar",
-            "gzip",
-            "unzip",
-            "zip",
             "openssl",
-            "jq",
-            "ufw",
             "python3",
         ]
     )
@@ -265,7 +259,7 @@ def _apply_plan(plan: DeployPlan, server: str, args: argparse.Namespace) -> int:
             *collect_manifest_ports(manifests),
             *parse_port_list(args.extra_allow_ports),
         }
-        enforce_ufw_tcp_allowlist(sorted(allow_ports))
+        enforce_firewall_tcp_allowlist(sorted(allow_ports))
         ok(f"firewall active allowlist: {sorted(allow_ports)}")
 
     active, listening = wait_for_service(plan.service_name, plan.node.listen_port)
@@ -406,10 +400,10 @@ def cmd_firewall(args: argparse.Namespace) -> int:
         *collect_manifest_ports(manifests),
         *parse_port_list(args.allow_ports),
     }
-    enforce_ufw_tcp_allowlist(sorted(allow_ports))
+    enforce_firewall_tcp_allowlist(sorted(allow_ports))
     ok(f"firewall active allowlist: {sorted(allow_ports)}")
     if args.show_status:
-        print(ufw_status())
+        print(firewall_status())
     return 0
 
 
@@ -473,7 +467,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     except Exception:
         print("primary_ipv4=unavailable")
     print(f"ssh_ports={detect_ssh_ports()}")
-    print(f"ufw_status={ufw_status().splitlines()[0] if ufw_status() else 'unknown'}")
+    print(f"firewall_status={firewall_status()}")
+    active, enabled = systemd_status(FIREWALL_SERVICE_NAME)
+    print(f"{FIREWALL_SERVICE_NAME}: active={active} enabled={enabled}")
     _print_bbr_summary(bbr_status())
     manifests = load_node_manifests()
     service_names = [part.strip() for part in args.services.split(",") if part.strip()] or collect_manifest_services(manifests)
@@ -856,7 +852,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--ports", default="")
     doctor.set_defaults(func=cmd_doctor)
 
-    firewall = sub.add_parser("firewall", help="enforce tcp allowlist with ufw")
+    firewall = sub.add_parser("firewall", help="enforce tcp allowlist with built-in firewall service")
     firewall.add_argument("--allow-ports", default="")
     firewall.add_argument("--show-status", action="store_true")
     firewall.set_defaults(func=cmd_firewall)
