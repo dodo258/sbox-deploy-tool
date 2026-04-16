@@ -71,6 +71,8 @@ sboxctl menu
 - 使用内置流媒体规则集合
 - 自定义要解锁的流媒体域名后缀
 
+脚本不会全局改系统 DNS，只会把选中的流媒体域名后缀交给流媒体 DNS 解析。
+
 ## 4. 防火墙策略
 
 脚本默认会自动处理防火墙，并且采用收口模式：
@@ -88,19 +90,19 @@ sboxctl menu
 查看总入口说明：
 
 ```bash
-./bin/sboxctl init
+sboxctl init
 ```
 
 进入交互首页：
 
 ```bash
-sudo ./bin/sboxctl menu
+sudo sboxctl menu
 ```
 
 查看已部署节点状态：
 
 ```bash
-./bin/sboxctl show-status
+sboxctl show-status
 ```
 
 查看已部署节点的 `VLESS` 地址：

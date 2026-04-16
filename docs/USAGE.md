@@ -67,6 +67,8 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 - 内置规则集合
 - 自定义域名后缀列表
 
+脚本不会全局改系统 DNS，只会把选中的流媒体域名后缀交给流媒体 DNS 解析。
+
 ## 四、BBR
 
 脚本会在部署前自动检查：
