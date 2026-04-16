@@ -80,6 +80,9 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(config["inbounds"][0]["protocol"], "vless")
         self.assertEqual(config["dns"]["servers"][1]["address"], "192.0.2.53")
         self.assertIn("domain:netflix.com", config["dns"]["servers"][1]["domains"])
+        self.assertTrue(config["inbounds"][0]["sniffing"]["enabled"])
+        self.assertEqual(config["inbounds"][0]["sniffing"]["destOverride"], ["http", "tls", "quic"])
+        self.assertEqual(config["outbounds"][0]["settings"]["domainStrategy"], "UseIPv4")
 
     def test_profiles(self) -> None:
         self.assertIn("disneyplus.com", get_profile("common-media"))
@@ -100,6 +103,10 @@ class GenerationTests(unittest.TestCase):
         config = build_config(plan)
         self.assertEqual(config["dns"]["servers"][1]["server"], "dns.example.com")
         self.assertEqual(config["dns"]["servers"][1]["server_port"], 5353)
+        self.assertEqual(config["route"]["rules"][0]["action"], "sniff")
+        self.assertEqual(config["route"]["rules"][1]["action"], "resolve")
+        self.assertEqual(config["route"]["rules"][1]["server"], "streaming-dns")
+        self.assertEqual(config["route"]["rules"][2]["strategy"], "prefer_ipv4")
 
     def test_xray_rejects_tls_streaming_dns(self) -> None:
         with self.assertRaisesRegex(Exception, "does not accept tls://"):
