@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -800,8 +801,12 @@ def _interactive_deploy(backend: BackendType) -> int:
 
 def cmd_menu(_: argparse.Namespace) -> int:
     require_root()
+    suppress_logo_once = os.environ.pop("SBOXCTL_SUPPRESS_MENU_LOGO_ONCE", "") == "1"
     while True:
-        print_logo()
+        if suppress_logo_once:
+            suppress_logo_once = False
+        else:
+            print_logo()
         print("1) 部署 sing-box 节点 (推荐)")
         print("2) 部署 xray 节点")
         print("3) 查看节点状态")

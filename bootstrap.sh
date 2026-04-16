@@ -60,9 +60,9 @@ fi
 
 run_installer() {
   if [[ -r /dev/tty ]]; then
-    bash "${INSTALL_DIR}/install.sh" </dev/tty
+    SBOXCTL_SUPPRESS_MENU_LOGO_ONCE=1 bash "${INSTALL_DIR}/install.sh" </dev/tty
   else
-    bash "${INSTALL_DIR}/install.sh"
+    SBOXCTL_SUPPRESS_MENU_LOGO_ONCE=1 bash "${INSTALL_DIR}/install.sh"
   fi
 }
 
