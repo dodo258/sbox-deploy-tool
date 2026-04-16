@@ -65,14 +65,14 @@ sboxctl menu
 ## 常用命令
 
 ```bash
-sboxctl init
-sudo sboxctl menu
-sboxctl show-status
-sboxctl show-links
-sboxctl show-logs
-sudo sboxctl remove-node
-sboxctl bbr-status
-sudo sboxctl firewall --show-status
+sboxctl init                         # 查看工具入口说明
+sudo sboxctl menu                   # 打开交互菜单
+sboxctl show-status                 # 查看已部署节点和服务状态
+sboxctl show-links                  # 查看当前节点的 VLESS 导入地址
+sboxctl show-logs                   # 查看节点最近日志
+sudo sboxctl remove-node            # 删除已部署节点
+sboxctl bbr-status                  # 查看 BBR 当前状态
+sudo sboxctl firewall --show-status # 查看当前防火墙状态
 ```
 
 ## 说明
