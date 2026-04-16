@@ -46,8 +46,11 @@ from .system_ops import (
     load_node_manifests,
     parse_port_list,
     port_is_listening,
+    read_service_logs,
     require_root,
+    remove_node_manifest,
     restore_backup,
+    stop_and_disable_service,
     systemd_apply,
     systemd_status,
     validate_domain,
@@ -312,6 +315,35 @@ def _node_from_manifest(payload: dict) -> NodeSpec:
     )
 
 
+def _config_path_from_manifest(payload: dict) -> Path:
+    install_root = Path(str(payload["install_root"]))
+    tag = str(payload["node"]["tag"])
+    return install_root / f"{tag}.json"
+
+
+def _service_path_from_manifest(payload: dict) -> Path:
+    service_name = str(payload.get("service_name") or "").strip()
+    return Path("/etc/systemd/system") / f"{service_name}.service"
+
+
+def _list_manifest_choices(manifests: list[dict]) -> None:
+    for index, payload in enumerate(manifests, start=1):
+        node = payload["node"]
+        print(
+            f"  {index}) {node['name']} | backend={payload.get('backend', 'unknown')} | "
+            f"service={payload.get('service_name', 'unknown')} | port={node['listen_port']}"
+        )
+
+
+def _select_manifest(manifests: list[dict], prompt: str) -> dict:
+    if not manifests:
+        raise CommandError("no deployed node manifests found")
+    _list_manifest_choices(manifests)
+    valid = {str(index) for index in range(1, len(manifests) + 1)}
+    choice = _prompt_choice(prompt, valid, "1")
+    return manifests[int(choice) - 1]
+
+
 def _print_bbr_summary(status: dict[str, str | bool]) -> None:
     print(f"bbr_current={status['current']}")
     print(f"bbr_available={status['available']}")
@@ -492,6 +524,56 @@ def cmd_show_links(_: argparse.Namespace) -> int:
         print(f"[{payload.get('backend', 'unknown')}] {node.name}")
         print(export_vless_url(server, node))
         print("")
+    return 0
+
+
+def cmd_show_logs(args: argparse.Namespace) -> int:
+    section("Service Logs")
+    manifests = load_node_manifests()
+    payload = _select_manifest(manifests, "select node for logs (default 1): ")
+    service_name = str(payload.get("service_name") or "").strip()
+    if not service_name:
+        raise CommandError("selected manifest does not have a service name")
+    print(read_service_logs(service_name, args.lines))
+    return 0
+
+
+def cmd_remove_node(args: argparse.Namespace) -> int:
+    section("Remove Node")
+    require_root()
+    manifests = load_node_manifests()
+    payload = _select_manifest(manifests, "select node to remove (default 1): ")
+    node = payload["node"]
+    service_name = str(payload.get("service_name") or "").strip()
+    config_path = _config_path_from_manifest(payload)
+    service_path = _service_path_from_manifest(payload)
+    manifest_path = MANIFEST_ROOT / f"{node['tag']}.json"
+    print("about to remove:")
+    print(f"  name: {node['name']}")
+    print(f"  service: {service_name}")
+    print(f"  config: {config_path}")
+    print(f"  manifest: {manifest_path}")
+    confirm = input("remove this node now? [y/N]: ").strip().lower()
+    if confirm != "y":
+        warn("remove canceled")
+        return 0
+    if service_name:
+        stop_and_disable_service(service_name)
+        ok(f"service removed: {service_name}")
+    if config_path.exists():
+        config_path.unlink()
+        ok(f"config removed: {config_path}")
+    if service_path.exists():
+        service_path.unlink()
+    remove_node_manifest(str(node["tag"]))
+    remaining = load_node_manifests()
+    allow_ports = {
+        22,
+        *detect_ssh_ports(),
+        *collect_manifest_ports(remaining),
+    }
+    enforce_firewall_tcp_allowlist(sorted(allow_ports))
+    ok(f"firewall active allowlist: {sorted(allow_ports)}")
     return 0
 
 
@@ -704,9 +786,11 @@ def cmd_menu(_: argparse.Namespace) -> int:
         print("2) 部署 xray 节点")
         print("3) 查看节点状态")
         print("4) 查看 VLESS 地址")
-        print("5) 查看 BBR 状态")
-        print("6) 调整防火墙")
-        print("7) Reality 本地域名优选说明")
+        print("5) 查看节点日志")
+        print("6) 删除节点")
+        print("7) 查看 BBR 状态")
+        print("8) 调整防火墙")
+        print("9) Reality 域名选择说明")
         print("0) 退出")
         choice = input("select: ").strip() or "1"
         try:
@@ -719,11 +803,15 @@ def cmd_menu(_: argparse.Namespace) -> int:
             elif choice == "4":
                 cmd_show_links(argparse.Namespace())
             elif choice == "5":
-                cmd_bbr_status(argparse.Namespace())
+                cmd_show_logs(argparse.Namespace(lines=80))
             elif choice == "6":
+                cmd_remove_node(argparse.Namespace())
+            elif choice == "7":
+                cmd_bbr_status(argparse.Namespace())
+            elif choice == "8":
                 raw = input("extra allow ports [optional, comma separated]: ").strip() or ""
                 cmd_firewall(argparse.Namespace(allow_ports=raw, show_status=True))
-            elif choice == "7":
+            elif choice == "9":
                 _print_probe_help()
             elif choice == "0":
                 return 0
@@ -746,12 +834,14 @@ def cmd_init(_: argparse.Namespace) -> int:
     print("  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh | sudo bash")
     print("")
     print("Useful commands:")
-    print("  ./bin/sboxctl menu")
-    print("  ./bin/sboxctl show-status")
-    print("  ./bin/sboxctl show-links")
-    print("  ./bin/sboxctl bbr-status")
-    print("  sudo ./bin/sboxctl firewall --show-status")
-    print("  ./bin/sboxctl import-xray --input <XRAY_JSON> --role main --region <REGION_LABEL> --backend sing-box")
+    print("  sboxctl menu")
+    print("  sboxctl show-status")
+    print("  sboxctl show-links")
+    print("  sboxctl show-logs")
+    print("  sudo sboxctl remove-node")
+    print("  sboxctl bbr-status")
+    print("  sudo sboxctl firewall --show-status")
+    print("  sboxctl import-xray --input <XRAY_JSON> --role main --region <REGION_LABEL> --backend sing-box")
     return 0
 
 
@@ -946,6 +1036,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     show_links = sub.add_parser("show-links", help="show deployed VLESS links")
     show_links.set_defaults(func=cmd_show_links)
+
+    show_logs = sub.add_parser("show-logs", help="show recent logs for a deployed node service")
+    show_logs.add_argument("--lines", type=int, default=80)
+    show_logs.set_defaults(func=cmd_show_logs)
+
+    remove_node = sub.add_parser("remove-node", help="remove one deployed node and refresh firewall")
+    remove_node.set_defaults(func=cmd_remove_node)
 
     doctor = sub.add_parser("doctor", help="inspect system and deployed nodes")
     doctor.add_argument("--services", default="")

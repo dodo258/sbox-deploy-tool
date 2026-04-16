@@ -406,6 +406,29 @@ def systemd_status(service_name: str) -> tuple[str, str]:
     return active, enabled
 
 
+def stop_and_disable_service(service_name: str) -> None:
+    if shutil.which("systemctl") is None:
+        raise CommandError("systemctl not found")
+    run(["systemctl", "disable", "--now", service_name], check=False)
+    service_path = Path("/etc/systemd/system") / f"{service_name}.service"
+    if service_path.exists():
+        service_path.unlink()
+    run(["systemctl", "daemon-reload"], check=False)
+
+
+def read_service_logs(service_name: str, lines: int = 80) -> str:
+    if shutil.which("journalctl") is None:
+        raise CommandError("journalctl not found")
+    completed = run(
+        ["journalctl", "-u", service_name, "-n", str(lines), "--no-pager"],
+        check=False,
+    )
+    output = (completed.stdout or completed.stderr or "").strip()
+    if not output:
+        return f"no logs found for service={service_name}"
+    return output
+
+
 def port_is_listening(port: int) -> bool:
     if shutil.which("ss") is None:
         return False
@@ -450,6 +473,15 @@ def write_node_manifest(tag: str, payload: dict, manifest_root: Path = MANIFEST_
     target = manifest_root / f"{tag}.json"
     target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
     return target
+
+
+def remove_node_manifest(tag: str, manifest_root: Path = MANIFEST_ROOT) -> bool:
+    require_root()
+    target = manifest_root / f"{tag}.json"
+    if not target.exists():
+        return False
+    target.unlink()
+    return True
 
 
 def load_node_manifests(manifest_root: Path = MANIFEST_ROOT) -> list[dict]:

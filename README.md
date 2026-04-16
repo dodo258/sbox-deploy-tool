@@ -22,15 +22,23 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 
 脚本会进入交互首页。
 
+安装完成后，可以直接在服务器里输入：
+
+```bash
+sboxctl menu
+```
+
 首页会提供这些主选项：
 
 - 部署 `sing-box` 节点
 - 部署 `xray` 节点
 - 查看节点状态
 - 查看 `VLESS` 地址
+- 查看节点日志
+- 删除节点
 - 查看 `BBR` 状态
 - 单独调整防火墙
-- 查看本地域名优选说明
+- 查看 `Reality` 域名选择说明
 
 ## 2. Reality 域名选择
 
@@ -98,25 +106,37 @@ sudo ./bin/sboxctl menu
 查看已部署节点的 `VLESS` 地址：
 
 ```bash
-./bin/sboxctl show-links
+sboxctl show-links
+```
+
+查看某个节点最近日志：
+
+```bash
+sboxctl show-logs
+```
+
+删除某个已部署节点：
+
+```bash
+sudo sboxctl remove-node
 ```
 
 查看 `BBR` 状态：
 
 ```bash
-./bin/sboxctl bbr-status
+sboxctl bbr-status
 ```
 
 手动重新收口防火墙：
 
 ```bash
-sudo ./bin/sboxctl firewall --show-status
+sudo sboxctl firewall --show-status
 ```
 
 从旧 `xray` 配置导入：
 
 ```bash
-./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LABEL> --backend sing-box
+sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LABEL> --backend sing-box
 ```
 
 ## 6. 仓库结构

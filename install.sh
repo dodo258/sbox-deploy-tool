@@ -22,4 +22,5 @@ if (( ${#MISSING_PKGS[@]} > 0 )); then
 fi
 
 chmod +x "${ROOT_DIR}/bin/sboxctl"
+ln -sf "${ROOT_DIR}/bin/sboxctl" /usr/local/bin/sboxctl
 exec "${ROOT_DIR}/bin/sboxctl" menu
