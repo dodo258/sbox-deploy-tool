@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import traceback
 import uuid
 from pathlib import Path
 
@@ -351,14 +352,14 @@ def _list_manifest_choices(manifests: list[dict]) -> None:
     for index, payload in enumerate(manifests, start=1):
         node = payload["node"]
         print(
-            f"  {index}) {node['name']} | backend={payload.get('backend', 'unknown')} | "
-            f"service={payload.get('service_name', 'unknown')} | port={node['listen_port']}"
+            f"  {index}) {node['name']} | 后端={payload.get('backend', 'unknown')} | "
+            f"服务={payload.get('service_name', 'unknown')} | 端口={node['listen_port']}"
         )
 
 
 def _select_manifest(manifests: list[dict], prompt: str) -> dict:
     if not manifests:
-        raise CommandError("no deployed node manifests found")
+        raise CommandError("未发现已部署节点")
     _list_manifest_choices(manifests)
     valid = {str(index) for index in range(1, len(manifests) + 1)}
     choice = _prompt_choice(prompt, valid, "1")
@@ -366,16 +367,16 @@ def _select_manifest(manifests: list[dict], prompt: str) -> dict:
 
 
 def _print_bbr_summary(status: dict[str, str | bool]) -> None:
-    print(f"bbr_current={status['current']}")
-    print(f"bbr_available={status['available']}")
-    print(f"default_qdisc={status['qdisc']}")
-    print(f"bbr_has_support={status['has_bbr']}")
-    print(f"bbr_enabled={status['enabled']}")
-    print(f"bbr_fq_ready={status['fq_ready']}")
+    print(f"当前拥塞控制: {status['current']}")
+    print(f"系统支持项: {status['available']}")
+    print(f"默认队列: {status['qdisc']}")
+    print(f"支持 BBR: {status['has_bbr']}")
+    print(f"已启用 BBR: {status['enabled']}")
+    print(f"fq 就绪: {status['fq_ready']}")
 
 
 def _print_probe_help() -> None:
-    section("Reality Local Probe")
+    section("Reality 域名选择说明")
     detected = None
     try:
         server_ip = detect_primary_ipv4()
@@ -384,10 +385,10 @@ def _print_probe_help() -> None:
         detected = None
     if detected:
         country = detected["country"] or detected["country_code"] or "unknown"
-        print(f"detected server ip: {detected['server_ip']}")
-        print(f"detected probe region: {detected['probe_region']} ({country})")
+        print(f"检测到的服务器 IP: {detected['server_ip']}")
+        print(f"自动匹配地区池: {detected['probe_region']} ({country})")
         print("")
-    print("macOS / Linux:")
+    print("macOS / Linux：")
     if detected:
         print(
             "  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | "
@@ -395,7 +396,7 @@ def _print_probe_help() -> None:
         )
     print("  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | bash -s -- --list-regions")
     print("")
-    print("Windows PowerShell:")
+    print("Windows PowerShell：")
     if detected:
         print(
             "  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | "
@@ -408,10 +409,10 @@ def _print_probe_help() -> None:
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
-    section("Reality Domain Probe")
+    section("Reality 域名探测")
     pools = load_candidates()
     if args.list_regions:
-        print("available regions:")
+        print("可用地区池：")
         for region in available_regions():
             print(f"  - {region}")
         return 0
@@ -428,11 +429,11 @@ def cmd_probe(args: argparse.Namespace) -> int:
         region = _normalize_region(args.region or "")
         domains = pools.get(region, [])
         if not domains:
-            print(f"No candidates for region={region}")
-            print(f"Available regions: {', '.join(available_regions())}")
+            print(f"地区 {region} 没有可用候选域名")
+            print(f"可用地区池: {', '.join(available_regions())}")
             return 1
     if not domains:
-        print("No domains provided")
+        print("没有可供测试的域名")
         return 1
     results = rank_domains(domains, timeout=args.timeout)
     for item in results[: args.limit]:
@@ -449,59 +450,59 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
-    section("Generate Bundle")
+    section("生成配置包")
     plan, server = _build_plan_from_args(args)
     bundle_dir = _write_bundle(plan, server)
-    ok(f"bundle written: {bundle_dir}")
+    ok(f"配置包已写入: {bundle_dir}")
     return 0
 
 
 def cmd_deploy_local(args: argparse.Namespace) -> int:
-    section("Deploy Local Node")
+    section("部署本机节点")
     require_root()
-    info(f"os: {detect_os().get('PRETTY_NAME', 'unknown')}")
+    info(f"系统: {detect_os().get('PRETTY_NAME', 'unknown')}")
     if not args.skip_install_deps:
         _ensure_dependencies()
-        ok("dependencies ready")
+        ok("基础依赖已就绪")
     try:
         status = ensure_bbr_enabled()
-        ok("bbr ready")
+        ok("BBR 已就绪")
         _print_bbr_summary(status)
     except Exception as exc:
-        warn(f"bbr auto-enable skipped: {exc}")
+        warn(f"BBR 自动启用已跳过: {exc}")
     if not args.skip_install_backend:
         version = install_backend(args.backend, args.backend_version)
-        ok(f"{args.backend} ready: v{version}")
+        ok(f"{args.backend} 已就绪: v{version}")
     plan, server = _build_plan_from_args(args)
     return _apply_plan(plan, server, args)
 
 
 def cmd_import_xray(args: argparse.Namespace) -> int:
-    section("Import Xray Reality")
+    section("导入 Xray Reality")
     plan, server = _build_plan_from_xray(args)
-    info(f"imported xray file: {args.input}")
+    info(f"已导入 Xray 文件: {args.input}")
     if args.deploy_local:
         require_root()
         if not args.skip_install_deps:
             _ensure_dependencies()
-            ok("dependencies ready")
+            ok("基础依赖已就绪")
         try:
             status = ensure_bbr_enabled()
-            ok("bbr ready")
+            ok("BBR 已就绪")
             _print_bbr_summary(status)
         except Exception as exc:
-            warn(f"bbr auto-enable skipped: {exc}")
+            warn(f"BBR 自动启用已跳过: {exc}")
         if not args.skip_install_backend:
             version = install_backend(args.backend, args.backend_version)
-            ok(f"{args.backend} ready: v{version}")
+            ok(f"{args.backend} 已就绪: v{version}")
         return _apply_plan(plan, server, args)
     bundle_dir = _write_bundle(plan, server)
-    ok(f"bundle written: {bundle_dir}")
+    ok(f"配置包已写入: {bundle_dir}")
     return 0
 
 
 def cmd_firewall(args: argparse.Namespace) -> int:
-    section("Firewall")
+    section("防火墙")
     require_root()
     manifests = load_node_manifests()
     allow_ports = {
@@ -511,33 +512,33 @@ def cmd_firewall(args: argparse.Namespace) -> int:
         *parse_port_list(args.allow_ports),
     }
     enforce_firewall_tcp_allowlist(sorted(allow_ports))
-    ok(f"firewall active allowlist: {sorted(allow_ports)}")
+    ok(f"当前防火墙放行端口: {sorted(allow_ports)}")
     if args.show_status:
         print(firewall_status())
     return 0
 
 
 def cmd_bbr_status(_: argparse.Namespace) -> int:
-    section("BBR Status")
-    print(f"kernel={kernel_release()}")
+    section("BBR 状态")
+    print(f"内核版本: {kernel_release()}")
     _print_bbr_summary(bbr_status())
     return 0
 
 
 def cmd_enable_bbr(_: argparse.Namespace) -> int:
-    section("Enable BBR")
+    section("启用 BBR")
     require_root()
     status = enable_bbr()
-    ok("bbr settings applied")
+    ok("BBR 设置已应用")
     _print_bbr_summary(status)
     return 0
 
 
 def cmd_show_links(_: argparse.Namespace) -> int:
-    section("VLESS Links")
+    section("VLESS 地址")
     manifests = load_node_manifests()
     if not manifests:
-        warn("no deployed node manifests found")
+        warn("未发现已部署节点")
         return 0
     for payload in manifests:
         node = _node_from_manifest(payload)
@@ -549,41 +550,41 @@ def cmd_show_links(_: argparse.Namespace) -> int:
 
 
 def cmd_show_logs(args: argparse.Namespace) -> int:
-    section("Service Logs")
+    section("节点日志")
     manifests = load_node_manifests()
-    payload = _select_manifest(manifests, "select node for logs (default 1): ")
+    payload = _select_manifest(manifests, "请选择要查看日志的节点（默认 1）: ")
     service_name = str(payload.get("service_name") or "").strip()
     if not service_name:
-        raise CommandError("selected manifest does not have a service name")
+        raise CommandError("选中的节点没有可用的 systemd 服务名")
     print(read_service_logs(service_name, args.lines))
     return 0
 
 
 def cmd_remove_node(args: argparse.Namespace) -> int:
-    section("Remove Node")
+    section("删除节点")
     require_root()
     manifests = load_node_manifests()
-    payload = _select_manifest(manifests, "select node to remove (default 1): ")
+    payload = _select_manifest(manifests, "请选择要删除的节点（默认 1）: ")
     node = payload["node"]
     service_name = str(payload.get("service_name") or "").strip()
     config_path = _config_path_from_manifest(payload)
     service_path = _service_path_from_manifest(payload)
     manifest_path = MANIFEST_ROOT / f"{node['tag']}.json"
-    print("about to remove:")
-    print(f"  name: {node['name']}")
-    print(f"  service: {service_name}")
-    print(f"  config: {config_path}")
-    print(f"  manifest: {manifest_path}")
-    confirm = _prompt_input("remove this node now? [y/N]: ").strip().lower()
+    print("即将删除：")
+    print(f"  节点名称: {node['name']}")
+    print(f"  服务名: {service_name}")
+    print(f"  配置文件: {config_path}")
+    print(f"  清单文件: {manifest_path}")
+    confirm = _prompt_input("确认现在删除这个节点吗？[y/N]: ").strip().lower()
     if confirm != "y":
-        warn("remove canceled")
+        warn("已取消删除")
         return 0
     if service_name:
         stop_and_disable_service(service_name)
-        ok(f"service removed: {service_name}")
+        ok(f"服务已移除: {service_name}")
     if config_path.exists():
         config_path.unlink()
-        ok(f"config removed: {config_path}")
+        ok(f"配置已移除: {config_path}")
     if service_path.exists():
         service_path.unlink()
     remove_node_manifest(str(node["tag"]))
@@ -594,15 +595,15 @@ def cmd_remove_node(args: argparse.Namespace) -> int:
         *collect_manifest_ports(remaining),
     }
     enforce_firewall_tcp_allowlist(sorted(allow_ports))
-    ok(f"firewall active allowlist: {sorted(allow_ports)}")
+    ok(f"当前防火墙放行端口: {sorted(allow_ports)}")
     return 0
 
 
 def cmd_show_status(_: argparse.Namespace) -> int:
-    section("Node Status")
+    section("节点状态")
     manifests = load_node_manifests()
     if not manifests:
-        warn("no deployed node manifests found")
+        warn("未发现已部署节点")
         return 0
     _print_bbr_summary(bbr_status())
     for payload in manifests:
@@ -612,50 +613,50 @@ def cmd_show_status(_: argparse.Namespace) -> int:
         active, enabled = systemd_status(service_name)
         listening = port_is_listening(int(node["listen_port"]))
         print(
-            f"{node['name']} | backend={backend} | service={service_name} | "
-            f"port={node['listen_port']} | active={active} | enabled={enabled} | listening={listening}"
+            f"{node['name']} | 后端={backend} | 服务={service_name} | "
+            f"端口={node['listen_port']} | 运行中={active} | 开机自启={enabled} | 端口监听={listening}"
         )
     return 0
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    section("Doctor")
-    info(f"os: {detect_os().get('PRETTY_NAME', 'unknown')}")
-    print(f"kernel={kernel_release()}")
+    section("环境体检")
+    info(f"系统: {detect_os().get('PRETTY_NAME', 'unknown')}")
+    print(f"内核版本: {kernel_release()}")
     try:
-        print(f"primary_ipv4={detect_primary_ipv4()}")
+        print(f"主 IPv4: {detect_primary_ipv4()}")
     except Exception:
-        print("primary_ipv4=unavailable")
-    print(f"ssh_ports={detect_ssh_ports()}")
-    print(f"firewall_status={firewall_status()}")
+        print("主 IPv4: 无法自动检测")
+    print(f"SSH 端口: {detect_ssh_ports()}")
+    print(f"防火墙状态: {firewall_status()}")
     active, enabled = systemd_status(FIREWALL_SERVICE_NAME)
-    print(f"{FIREWALL_SERVICE_NAME}: active={active} enabled={enabled}")
+    print(f"{FIREWALL_SERVICE_NAME}: 运行中={active} 开机自启={enabled}")
     _print_bbr_summary(bbr_status())
     manifests = load_node_manifests()
     service_names = [part.strip() for part in args.services.split(",") if part.strip()] or collect_manifest_services(manifests)
     ports = [int(part) for part in args.ports.split(",") if part.strip()] or collect_manifest_ports(manifests)
     for service in service_names:
         active, enabled = systemd_status(service)
-        print(f"{service}: active={active} enabled={enabled}")
+        print(f"{service}: 运行中={active} 开机自启={enabled}")
     for port in ports:
-        print(f"port {port}: listening={port_is_listening(port)}")
+        print(f"端口 {port}: 监听中={port_is_listening(port)}")
     return 0
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
-    section("Backup")
+    section("备份")
     require_root()
     paths = [Path(part.strip()) for part in args.paths.split(",") if part.strip()]
     archive = backup_paths(args.label, paths, Path(args.backup_root))
-    ok(f"backup created: {archive}")
+    ok(f"备份已创建: {archive}")
     return 0
 
 
 def cmd_restore(args: argparse.Namespace) -> int:
-    section("Restore")
+    section("恢复")
     require_root()
     restore_backup(Path(args.archive), Path(args.destination))
-    ok(f"restored: {args.archive} -> {args.destination}")
+    ok(f"已恢复: {args.archive} -> {args.destination}")
     return 0
 
 
@@ -664,12 +665,12 @@ def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
     if not raw:
         return default
     if raw not in valid:
-        raise CommandError(f"invalid choice: {raw}")
+        raise CommandError(f"无效选项: {raw}")
     return raw
 
 
 def _prompt_region(default_region: str = "us") -> str:
-    raw = _prompt_input(f"region label (default {default_region}): ").strip().lower()
+    raw = _prompt_input(f"地区标记（默认 {default_region}）: ").strip().lower()
     return raw or default_region
 
 
@@ -684,19 +685,19 @@ def _detect_server_region_label() -> tuple[str, str | None]:
 
 
 def _prompt_streaming_profile() -> tuple[str, str | None]:
-    print("streaming profile:")
+    print("流媒体规则：")
     print("  1) common-media (全部常见流媒体)")
     index_to_profile = {str(index): name for index, name in enumerate(sorted(STREAMING_PROFILES), start=1)}
     for index, profile in index_to_profile.items():
         print(f"  {index}) {profile}")
-    print("  c) custom")
-    choice = _prompt_input("select profile (default 1): ").strip() or "1"
+    print("  c) 自定义")
+    choice = _prompt_input("请选择规则（默认 1）: ").strip() or "1"
     if choice == "c":
-        custom = _prompt_input("custom domains (comma separated): ").strip()
+        custom = _prompt_input("请输入自定义域名后缀（逗号分隔）: ").strip()
         return "common-media", custom
     profile = index_to_profile.get(choice)
     if not profile:
-        raise CommandError(f"invalid streaming profile selection: {choice}")
+        raise CommandError(f"无效的流媒体规则选项: {choice}")
     return profile, None
 
 
@@ -704,19 +705,19 @@ def _recommended_reality_domains(region: str, limit: int = 3, timeout: int = 4) 
     pools = load_candidates()
     candidates = pools.get(region, [])
     if not candidates:
-        raise CommandError(f"no built-in candidate pool for region: {region}")
-    info(f"probing built-in Reality domains for region pool: {region}")
+        raise CommandError(f"当前地区没有内置候选域名池: {region}")
+    info(f"正在探测内置 Reality 域名，地区池: {region}")
     ranked = rank_domains(candidates, timeout=timeout)
     preferred = [item for item in ranked if item.ok]
     selected = preferred[:limit] if preferred else ranked[:limit]
     if not selected:
-        raise CommandError(f"no Reality domain candidates available for region: {region}")
+        raise CommandError(f"当前地区没有可用的 Reality 候选域名: {region}")
     return selected
 
 
 def _prompt_reality_domain(region: str) -> str:
     options = _recommended_reality_domains(region)
-    print("recommended reality domains:")
+    print("推荐的 Reality 域名：")
     valid_choices = set()
     for index, item in enumerate(options, start=1):
         valid_choices.add(str(index))
@@ -724,54 +725,54 @@ def _prompt_reality_domain(region: str) -> str:
         ttfb = f"{item.ttfb:.3f}s" if item.ttfb is not None else "-"
         note = f" | note={item.note}" if item.note else ""
         print(f"  {index}) {item.domain} | score={item.score} | code={status} | ttfb={ttfb}{note}")
-    choice = _prompt_choice("select reality domain (default 1): ", valid_choices, "1")
+    choice = _prompt_choice("请选择 Reality 域名（默认 1）: ", valid_choices, "1")
     return options[int(choice) - 1].domain
 
 
 def _interactive_deploy(backend: BackendType) -> int:
-    section(f"Deploy {backend}")
-    print("node mode:")
+    section(f"部署 {backend} 节点")
+    print("节点模式：")
     print("  1) 主节点")
     print("  2) 流媒体专用节点")
     print("  3) 主节点 + 流媒体 DNS")
-    mode = _prompt_choice("select mode (default 1): ", {"1", "2", "3"}, "1")
+    mode = _prompt_choice("请选择模式（默认 1）: ", {"1", "2", "3"}, "1")
     role = "media" if mode == "2" else "main"
     enable_streaming_dns = mode in {"2", "3"}
     detected_region, detected_country = _detect_server_region_label()
-    print(f"detected region pool: {detected_region}" + (f" ({detected_country})" if detected_country else ""))
+    print(f"自动识别地区池: {detected_region}" + (f" ({detected_country})" if detected_country else ""))
     region = _prompt_region(detected_region)
     default_port = "2443" if role == "media" else "443"
-    port = int(_prompt_input(f"listen port (default {default_port}): ").strip() or default_port)
+    port = int(_prompt_input(f"监听端口（默认 {default_port}）: ").strip() or default_port)
     validate_port(port)
     domain = _prompt_reality_domain(region)
     default_name = _default_name(role, region, backend)
-    name = _prompt_input(f"node name (default {default_name}): ").strip() or default_name
-    service_name = _prompt_input("systemd service name [optional]: ").strip() or None
-    extra_allow_ports = _prompt_input("extra allow ports [optional, comma separated]: ").strip() or None
+    name = _prompt_input(f"节点名称（默认 {default_name}）: ").strip() or default_name
+    service_name = _prompt_input("systemd 服务名【可留空】: ").strip() or None
+    extra_allow_ports = _prompt_input("额外放行端口【可留空，逗号分隔】: ").strip() or None
     streaming_dns = None
     streaming_profile = "common-media"
     streaming_domains = None
     if enable_streaming_dns:
-        streaming_dns = _prompt_input("streaming DNS address: ").strip()
+        streaming_dns = _prompt_input("流媒体 DNS 地址: ").strip()
         if not streaming_dns:
-            raise CommandError("streaming DNS is required in media-enabled mode")
+            raise CommandError("当前模式必须填写流媒体 DNS 地址")
         streaming_profile, streaming_domains = _prompt_streaming_profile()
     print("")
-    print("summary:")
-    print(f"  backend: {backend}")
-    print(f"  role: {role}")
-    print(f"  region: {region}")
-    print(f"  port: {port}")
-    print(f"  reality domain: {domain}")
-    print(f"  node name: {name}")
+    print("部署摘要：")
+    print(f"  后端: {backend}")
+    print(f"  节点类型: {role}")
+    print(f"  地区标记: {region}")
+    print(f"  监听端口: {port}")
+    print(f"  Reality 域名: {domain}")
+    print(f"  节点名称: {name}")
     if enable_streaming_dns:
-        print(f"  streaming dns: {streaming_dns}")
-        print(f"  streaming profile: {streaming_profile}")
+        print(f"  流媒体 DNS: {streaming_dns}")
+        print(f"  流媒体规则: {streaming_profile}")
         if streaming_domains:
-            print(f"  custom domains: {streaming_domains}")
-    confirm = _prompt_input("deploy now? [Y/n]: ").strip().lower()
+            print(f"  自定义域名后缀: {streaming_domains}")
+    confirm = _prompt_input("确认现在部署吗？[Y/n]: ").strip().lower()
     if confirm == "n":
-        warn("deployment canceled")
+        warn("已取消部署")
         return 0
     args = argparse.Namespace(
         backend=backend,
@@ -817,7 +818,7 @@ def cmd_menu(_: argparse.Namespace) -> int:
         print("8) 调整防火墙")
         print("9) Reality 域名选择说明")
         print("0) 退出")
-        choice = _prompt_input("select: ").strip() or "1"
+        choice = _prompt_input("请选择: ").strip() or "1"
         try:
             if choice == "1":
                 _interactive_deploy("sing-box")
@@ -834,31 +835,31 @@ def cmd_menu(_: argparse.Namespace) -> int:
             elif choice == "7":
                 cmd_bbr_status(argparse.Namespace())
             elif choice == "8":
-                raw = _prompt_input("extra allow ports [optional, comma separated]: ").strip() or ""
+                raw = _prompt_input("额外放行端口【可留空，逗号分隔】: ").strip() or ""
                 cmd_firewall(argparse.Namespace(allow_ports=raw, show_status=True))
             elif choice == "9":
                 _print_probe_help()
             elif choice == "0":
                 return 0
             else:
-                warn("unknown choice")
+                warn("未知选项")
         except CommandError as exc:
             err(str(exc))
         print("")
-        _prompt_input("press Enter to continue...")
+        _prompt_input("按回车继续...")
 
 
 def cmd_init(_: argparse.Namespace) -> int:
     print_logo()
-    section("Overview")
-    info("server-side one-click deploy tool for VLESS + Reality + Vision")
-    info("default backend: sing-box")
-    info("also supports xray with the same node workflow")
+    section("工具概览")
+    info("服务器端一键部署工具，协议固定为 VLESS + Reality + Vision")
+    info("默认后端: sing-box")
+    info("同时支持 xray，部署流程保持一致")
     print("")
-    print("Start on server:")
+    print("服务器端启动命令：")
     print("  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh | sudo bash")
     print("")
-    print("Useful commands:")
+    print("常用命令：")
     print("  sboxctl menu")
     print("  sboxctl show-status")
     print("  sboxctl show-links")
@@ -916,7 +917,7 @@ def _remote_deploy_args(args: argparse.Namespace) -> list[str]:
 
 
 def cmd_deploy_remote(args: argparse.Namespace) -> int:
-    section("Deploy Remote Node")
+    section("远程部署节点")
     validate_port(args.port)
     validate_port(args.ssh_port)
     validate_domain(args.domain)
@@ -929,10 +930,10 @@ def cmd_deploy_remote(args: argparse.Namespace) -> int:
         _remote_deploy_args(args),
     )
     try:
-        info(f"packaged: {archive}")
+        info(f"本地打包完成: {archive}")
         run_remote(host, args.ssh_port, render_prepare_remote_dir_command(args.remote_dir), args.identity_file, args.ssh_password)
         upload_archive(archive, host, remote_archive, args.ssh_port, args.identity_file, args.ssh_password)
-        ok(f"uploaded to {host}:{remote_archive}")
+        ok(f"已上传到 {host}:{remote_archive}")
         result = run_remote(host, args.ssh_port, remote_cmd, args.identity_file, args.ssh_password)
         sys.stdout.write(result.stdout)
         if result.stderr:
@@ -1100,8 +1101,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        args = parser.parse_args(argv)
+        return args.func(args)
+    except KeyboardInterrupt:
+        err("已取消操作")
+        return 130
+    except CommandError as exc:
+        err(str(exc))
+        return 1
+    except Exception as exc:
+        if os.environ.get("SBOXCTL_DEBUG") == "1":
+            traceback.print_exc()
+        else:
+            err(f"脚本运行异常: {exc}")
+        return 1
 
 
 if __name__ == "__main__":
