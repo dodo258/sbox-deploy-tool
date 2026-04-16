@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  TARGET="$(readlink "$SOURCE")"
+  if [[ "$TARGET" != /* ]]; then
+    SOURCE="$DIR/$TARGET"
+  else
+    SOURCE="$TARGET"
+  fi
+done
+
+ROOT_DIR="$(cd "$(dirname "$SOURCE")/.." && pwd)"
 export PYTHONPATH="${ROOT_DIR}/lib:${PYTHONPATH:-}"
 
 if ! command -v python3 >/dev/null 2>&1; then
