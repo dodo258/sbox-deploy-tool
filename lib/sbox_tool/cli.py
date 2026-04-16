@@ -89,6 +89,7 @@ def _ensure_dependencies() -> None:
 
 
 def _build_streaming_dns(
+    backend: BackendType,
     enabled: bool,
     streaming_dns: str | None,
     streaming_profile: str,
@@ -99,6 +100,8 @@ def _build_streaming_dns(
         return None
     if not streaming_dns:
         raise CommandError("streaming DNS is required for media-enabled modes")
+    if backend == "xray" and streaming_dns.startswith("tls://"):
+        raise CommandError("xray backend does not accept tls:// streaming DNS directly; use IP, IP:PORT, https:// or quic://")
     suffixes = get_profile(streaming_profile)
     if streaming_domains:
         suffixes = [part.strip() for part in streaming_domains.split(",") if part.strip()]
@@ -132,6 +135,7 @@ def _build_plan_from_args(args: argparse.Namespace) -> tuple[DeployPlan, str]:
     server = _resolve_server_address(args.server)
     node = _make_node(args.role, args.region, args.port, args.domain, args.name, backend)
     streaming_dns = _build_streaming_dns(
+        backend,
         bool(args.enable_streaming_dns),
         args.streaming_dns,
         args.streaming_profile,
@@ -163,6 +167,7 @@ def _build_plan_from_xray(args: argparse.Namespace) -> tuple[DeployPlan, str]:
         role=args.role,
     )
     streaming_dns = _build_streaming_dns(
+        backend,
         bool(args.enable_streaming_dns),
         args.streaming_dns,
         args.streaming_profile,

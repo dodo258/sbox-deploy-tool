@@ -62,6 +62,8 @@ irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/prob
 - `tls://...`
 - `quic://...`
 
+如果后端选择 `xray`，建议优先使用 `IP`、`IP:PORT`、`https://...` 或 `quic://...`。
+
 脚本支持三种部署方式：
 
 - 主节点

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from sbox_tool.config_gen import build_config, build_service, write_json
+from sbox_tool.cli import _build_streaming_dns
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
@@ -97,6 +98,10 @@ class GenerationTests(unittest.TestCase):
         config = build_config(plan)
         self.assertEqual(config["dns"]["servers"][1]["server"], "dns.example.com")
         self.assertEqual(config["dns"]["servers"][1]["server_port"], 5353)
+
+    def test_xray_rejects_tls_streaming_dns(self) -> None:
+        with self.assertRaisesRegex(Exception, "does not accept tls://"):
+            _build_streaming_dns("xray", True, "tls://dns.example.com", "netflix", None, "custom")
 
     def test_exports(self) -> None:
         node = self.make_node("main", 443)

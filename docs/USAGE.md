@@ -58,6 +58,8 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-too
 - `tls://...`
 - `quic://...`
 
+如果你选的是 `xray` 后端，推荐填写 `IP`、`IP:PORT`、`https://...` 或 `quic://...`。
+
 如果你要自定义解锁范围，可以在交互流程里选择：
 
 - 内置规则集合
