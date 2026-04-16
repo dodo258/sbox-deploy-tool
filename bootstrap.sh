@@ -16,8 +16,18 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
-apt-get update
-apt-get install -y ca-certificates curl tar gzip
+MISSING_PKGS=()
+command -v curl >/dev/null 2>&1 || MISSING_PKGS+=("curl")
+command -v tar >/dev/null 2>&1 || MISSING_PKGS+=("tar")
+command -v gzip >/dev/null 2>&1 || MISSING_PKGS+=("gzip")
+if [[ ! -f /etc/ssl/certs/ca-certificates.crt ]]; then
+  MISSING_PKGS+=("ca-certificates")
+fi
+
+if (( ${#MISSING_PKGS[@]} > 0 )); then
+  apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true
+  apt-get install -y "${MISSING_PKGS[@]}"
+fi
 
 TMP_DIR="$(mktemp -d)"
 ARCHIVE_PATH="${TMP_DIR}/sboxctl.tar.gz"

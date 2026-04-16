@@ -54,8 +54,18 @@ def ensure_apt_dependencies(packages: list[str]) -> None:
     require_root()
     if shutil.which("apt-get") is None:
         raise CommandError("apt-get not found; first version supports Debian/Ubuntu only")
-    run(["apt-get", "update"])
-    run(["apt-get", "install", "-y", *packages])
+    missing = []
+    for package in packages:
+        completed = run(
+            ["dpkg-query", "-W", "-f=${Status}", package],
+            check=False,
+        )
+        if "install ok installed" not in (completed.stdout or ""):
+            missing.append(package)
+    if not missing:
+        return
+    run(["apt-get", "update", "-o", "Acquire::Retries=3", "-o", "Acquire::ForceIPv4=true"])
+    run(["apt-get", "install", "-y", *missing])
 
 
 def read_sysctl_value(key: str) -> str:

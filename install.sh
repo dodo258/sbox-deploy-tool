@@ -13,8 +13,20 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
-apt-get update
-apt-get install -y ca-certificates curl tar gzip unzip zip openssl jq ufw python3 python3-cryptography
+MISSING_PKGS=()
+command -v python3 >/dev/null 2>&1 || MISSING_PKGS+=("python3")
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 -c "import cryptography" >/dev/null 2>&1; then
+    MISSING_PKGS+=("python3-cryptography")
+  fi
+else
+  MISSING_PKGS+=("python3-cryptography")
+fi
+
+if (( ${#MISSING_PKGS[@]} > 0 )); then
+  apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true
+  apt-get install -y "${MISSING_PKGS[@]}"
+fi
 
 chmod +x "${ROOT_DIR}/bin/sboxctl"
 exec "${ROOT_DIR}/bin/sboxctl" menu
