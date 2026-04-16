@@ -65,6 +65,26 @@ from .xray_import import load_xray_reality_node
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_ROOT = PROJECT_ROOT / "output"
 BACKUP_ROOT = Path("/var/backups/sboxctl")
+_TTY_HANDLE = None
+
+
+def _prompt_input(prompt: str) -> str:
+    global _TTY_HANDLE
+    try:
+        return input(prompt)
+    except EOFError:
+        pass
+    if _TTY_HANDLE is None:
+        try:
+            _TTY_HANDLE = open("/dev/tty", "r+", encoding="utf-8", buffering=1)
+        except OSError as exc:
+            raise CommandError("interactive input is unavailable; please run in an SSH TTY session") from exc
+    _TTY_HANDLE.write(prompt)
+    _TTY_HANDLE.flush()
+    line = _TTY_HANDLE.readline()
+    if line == "":
+        raise CommandError("interactive input closed unexpectedly")
+    return line.rstrip("\n")
 
 
 def _default_name(role: str, region: str, backend: BackendType) -> str:
@@ -553,7 +573,7 @@ def cmd_remove_node(args: argparse.Namespace) -> int:
     print(f"  service: {service_name}")
     print(f"  config: {config_path}")
     print(f"  manifest: {manifest_path}")
-    confirm = input("remove this node now? [y/N]: ").strip().lower()
+    confirm = _prompt_input("remove this node now? [y/N]: ").strip().lower()
     if confirm != "y":
         warn("remove canceled")
         return 0
@@ -639,7 +659,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 
 def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
-    raw = input(prompt).strip()
+    raw = _prompt_input(prompt).strip()
     if not raw:
         return default
     if raw not in valid:
@@ -648,7 +668,7 @@ def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
 
 
 def _prompt_region(default_region: str = "us") -> str:
-    raw = input(f"region label (default {default_region}): ").strip().lower()
+    raw = _prompt_input(f"region label (default {default_region}): ").strip().lower()
     return raw or default_region
 
 
@@ -669,9 +689,9 @@ def _prompt_streaming_profile() -> tuple[str, str | None]:
     for index, profile in index_to_profile.items():
         print(f"  {index}) {profile}")
     print("  c) custom")
-    choice = input("select profile (default 1): ").strip() or "1"
+    choice = _prompt_input("select profile (default 1): ").strip() or "1"
     if choice == "c":
-        custom = input("custom domains (comma separated): ").strip()
+        custom = _prompt_input("custom domains (comma separated): ").strip()
         return "common-media", custom
     profile = index_to_profile.get(choice)
     if not profile:
@@ -720,18 +740,18 @@ def _interactive_deploy(backend: BackendType) -> int:
     print(f"detected region pool: {detected_region}" + (f" ({detected_country})" if detected_country else ""))
     region = _prompt_region(detected_region)
     default_port = "2443" if role == "media" else "443"
-    port = int(input(f"listen port (default {default_port}): ").strip() or default_port)
+    port = int(_prompt_input(f"listen port (default {default_port}): ").strip() or default_port)
     validate_port(port)
     domain = _prompt_reality_domain(region)
     default_name = _default_name(role, region, backend)
-    name = input(f"node name (default {default_name}): ").strip() or default_name
-    service_name = input("systemd service name [optional]: ").strip() or None
-    extra_allow_ports = input("extra allow ports [optional, comma separated]: ").strip() or None
+    name = _prompt_input(f"node name (default {default_name}): ").strip() or default_name
+    service_name = _prompt_input("systemd service name [optional]: ").strip() or None
+    extra_allow_ports = _prompt_input("extra allow ports [optional, comma separated]: ").strip() or None
     streaming_dns = None
     streaming_profile = "common-media"
     streaming_domains = None
     if enable_streaming_dns:
-        streaming_dns = input("streaming DNS address: ").strip()
+        streaming_dns = _prompt_input("streaming DNS address: ").strip()
         if not streaming_dns:
             raise CommandError("streaming DNS is required in media-enabled mode")
         streaming_profile, streaming_domains = _prompt_streaming_profile()
@@ -748,7 +768,7 @@ def _interactive_deploy(backend: BackendType) -> int:
         print(f"  streaming profile: {streaming_profile}")
         if streaming_domains:
             print(f"  custom domains: {streaming_domains}")
-    confirm = input("deploy now? [Y/n]: ").strip().lower()
+    confirm = _prompt_input("deploy now? [Y/n]: ").strip().lower()
     if confirm == "n":
         warn("deployment canceled")
         return 0
@@ -792,7 +812,7 @@ def cmd_menu(_: argparse.Namespace) -> int:
         print("8) 调整防火墙")
         print("9) Reality 域名选择说明")
         print("0) 退出")
-        choice = input("select: ").strip() or "1"
+        choice = _prompt_input("select: ").strip() or "1"
         try:
             if choice == "1":
                 _interactive_deploy("sing-box")
@@ -809,7 +829,7 @@ def cmd_menu(_: argparse.Namespace) -> int:
             elif choice == "7":
                 cmd_bbr_status(argparse.Namespace())
             elif choice == "8":
-                raw = input("extra allow ports [optional, comma separated]: ").strip() or ""
+                raw = _prompt_input("extra allow ports [optional, comma separated]: ").strip() or ""
                 cmd_firewall(argparse.Namespace(allow_ports=raw, show_status=True))
             elif choice == "9":
                 _print_probe_help()
@@ -820,7 +840,7 @@ def cmd_menu(_: argparse.Namespace) -> int:
         except CommandError as exc:
             err(str(exc))
         print("")
-        input("press Enter to continue...")
+        _prompt_input("press Enter to continue...")
 
 
 def cmd_init(_: argparse.Namespace) -> int:

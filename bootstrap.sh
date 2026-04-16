@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_SLUG="${SBOXCTL_REPO_SLUG:-dodo258/sbox-deploy-tool}"
 REPO_REF="${SBOXCTL_REPO_REF:-main}"
 INSTALL_DIR="${SBOXCTL_INSTALL_DIR:-/opt/sbox-deploy-tool}"
-ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/refs/heads/${REPO_REF}.tar.gz"
+ARCHIVE_URL="https://codeload.github.com/${REPO_SLUG}/tar.gz/refs/heads/${REPO_REF}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "[ERR] please run bootstrap as root"
@@ -27,6 +27,11 @@ fi
 if (( ${#MISSING_PKGS[@]} > 0 )); then
   apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true
   apt-get install -y "${MISSING_PKGS[@]}"
+fi
+
+if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_FORCE_UPDATE:-0}" != "1" ]]; then
+  echo "[INFO] existing install found at ${INSTALL_DIR}, skipping download"
+  exec "${INSTALL_DIR}/install.sh"
 fi
 
 TMP_DIR="$(mktemp -d)"

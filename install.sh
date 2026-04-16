@@ -23,4 +23,9 @@ fi
 
 chmod +x "${ROOT_DIR}/bin/sboxctl"
 ln -sf "${ROOT_DIR}/bin/sboxctl" /usr/local/bin/sboxctl
+
+if [[ ! -t 0 && -r /dev/tty ]]; then
+  exec </dev/tty
+fi
+
 exec "${ROOT_DIR}/bin/sboxctl" menu
