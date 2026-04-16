@@ -70,23 +70,29 @@ BACKUP_ROOT = Path("/var/backups/sboxctl")
 _TTY_HANDLE = None
 
 
-def _prompt_input(prompt: str) -> str:
+class BackToMenu(CommandError):
+    pass
+
+
+def _prompt_input(prompt: str, allow_back: bool = False) -> str:
     global _TTY_HANDLE
     try:
-        return input(prompt)
+        line = input(prompt)
     except EOFError:
-        pass
-    if _TTY_HANDLE is None:
-        try:
-            _TTY_HANDLE = open("/dev/tty", "r+", encoding="utf-8", buffering=1)
-        except OSError as exc:
-            raise CommandError("interactive input is unavailable; please run in an SSH TTY session") from exc
-    _TTY_HANDLE.write(prompt)
-    _TTY_HANDLE.flush()
-    line = _TTY_HANDLE.readline()
-    if line == "":
-        raise CommandError("interactive input closed unexpectedly")
-    return line.rstrip("\n")
+        if _TTY_HANDLE is None:
+            try:
+                _TTY_HANDLE = open("/dev/tty", "r+", encoding="utf-8", buffering=1)
+            except OSError as exc:
+                raise CommandError("交互输入不可用，请在 SSH TTY 终端中运行") from exc
+        _TTY_HANDLE.write(prompt)
+        _TTY_HANDLE.flush()
+        line = _TTY_HANDLE.readline()
+        if line == "":
+            raise CommandError("交互输入意外关闭")
+        line = line.rstrip("\n")
+    if allow_back and line.strip() == "0":
+        raise BackToMenu()
+    return line
 
 
 def _default_name(role: str, region: str, backend: BackendType) -> str:
@@ -361,8 +367,9 @@ def _select_manifest(manifests: list[dict], prompt: str) -> dict:
     if not manifests:
         raise CommandError("未发现已部署节点")
     _list_manifest_choices(manifests)
+    print("  0) 返回上一层")
     valid = {str(index) for index in range(1, len(manifests) + 1)}
-    choice = _prompt_choice(prompt, valid, "1")
+    choice = _prompt_choice(prompt, valid, "1", allow_back=True)
     return manifests[int(choice) - 1]
 
 
@@ -660,8 +667,8 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
-def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
-    raw = _prompt_input(prompt).strip()
+def _prompt_choice(prompt: str, valid: set[str], default: str, allow_back: bool = False) -> str:
+    raw = _prompt_input(prompt, allow_back=allow_back).strip()
     if not raw:
         return default
     if raw not in valid:
@@ -670,7 +677,7 @@ def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
 
 
 def _prompt_region(default_region: str = "us") -> str:
-    raw = _prompt_input(f"地区标记（默认 {default_region}）: ").strip().lower()
+    raw = _prompt_input(f"地区标记（默认 {default_region}，输入 0 返回）: ", allow_back=True).strip().lower()
     return raw or default_region
 
 
@@ -691,9 +698,10 @@ def _prompt_streaming_profile() -> tuple[str, str | None]:
     for index, profile in index_to_profile.items():
         print(f"  {index}) {profile}")
     print("  c) 自定义")
-    choice = _prompt_input("请选择规则（默认 1）: ").strip() or "1"
+    print("  0) 返回上一层")
+    choice = _prompt_input("请选择规则（默认 1）: ", allow_back=True).strip() or "1"
     if choice == "c":
-        custom = _prompt_input("请输入自定义域名后缀（逗号分隔）: ").strip()
+        custom = _prompt_input("请输入自定义域名后缀（逗号分隔，输入 0 返回）: ", allow_back=True).strip()
         return "common-media", custom
     profile = index_to_profile.get(choice)
     if not profile:
@@ -725,35 +733,38 @@ def _prompt_reality_domain(region: str) -> str:
         ttfb = f"{item.ttfb:.3f}s" if item.ttfb is not None else "-"
         note = f" | note={item.note}" if item.note else ""
         print(f"  {index}) {item.domain} | score={item.score} | code={status} | ttfb={ttfb}{note}")
-    choice = _prompt_choice("请选择 Reality 域名（默认 1）: ", valid_choices, "1")
+    print("  0) 返回上一层")
+    choice = _prompt_choice("请选择 Reality 域名（默认 1）: ", valid_choices, "1", allow_back=True)
     return options[int(choice) - 1].domain
 
 
 def _interactive_deploy(backend: BackendType) -> int:
     section(f"部署 {backend} 节点")
+    info("任意子项输入 0 可返回上一层")
     print("节点模式：")
     print("  1) 主节点")
     print("  2) 流媒体专用节点")
     print("  3) 主节点 + 流媒体 DNS")
-    mode = _prompt_choice("请选择模式（默认 1）: ", {"1", "2", "3"}, "1")
+    print("  0) 返回上一层")
+    mode = _prompt_choice("请选择模式（默认 1）: ", {"1", "2", "3"}, "1", allow_back=True)
     role = "media" if mode == "2" else "main"
     enable_streaming_dns = mode in {"2", "3"}
     detected_region, detected_country = _detect_server_region_label()
     print(f"自动识别地区池: {detected_region}" + (f" ({detected_country})" if detected_country else ""))
     region = _prompt_region(detected_region)
     default_port = "2443" if role == "media" else "443"
-    port = int(_prompt_input(f"监听端口（默认 {default_port}）: ").strip() or default_port)
+    port = int(_prompt_input(f"监听端口（默认 {default_port}，输入 0 返回）: ", allow_back=True).strip() or default_port)
     validate_port(port)
     domain = _prompt_reality_domain(region)
     default_name = _default_name(role, region, backend)
-    name = _prompt_input(f"节点名称（默认 {default_name}）: ").strip() or default_name
-    service_name = _prompt_input("systemd 服务名【可留空】: ").strip() or None
-    extra_allow_ports = _prompt_input("额外放行端口【可留空，逗号分隔】: ").strip() or None
+    name = _prompt_input(f"节点名称（默认 {default_name}，输入 0 返回）: ", allow_back=True).strip() or default_name
+    service_name = _prompt_input("systemd 服务名【可留空，输入 0 返回】: ", allow_back=True).strip() or None
+    extra_allow_ports = _prompt_input("额外放行端口【可留空，逗号分隔，输入 0 返回】: ", allow_back=True).strip() or None
     streaming_dns = None
     streaming_profile = "common-media"
     streaming_domains = None
     if enable_streaming_dns:
-        streaming_dns = _prompt_input("流媒体 DNS 地址: ").strip()
+        streaming_dns = _prompt_input("流媒体 DNS 地址（输入 0 返回）: ", allow_back=True).strip()
         if not streaming_dns:
             raise CommandError("当前模式必须填写流媒体 DNS 地址")
         streaming_profile, streaming_domains = _prompt_streaming_profile()
@@ -770,7 +781,7 @@ def _interactive_deploy(backend: BackendType) -> int:
         print(f"  流媒体规则: {streaming_profile}")
         if streaming_domains:
             print(f"  自定义域名后缀: {streaming_domains}")
-    confirm = _prompt_input("确认现在部署吗？[Y/n]: ").strip().lower()
+    confirm = _prompt_input("确认现在部署吗？[Y/n，输入 0 返回]: ", allow_back=True).strip().lower()
     if confirm == "n":
         warn("已取消部署")
         return 0
@@ -843,6 +854,8 @@ def cmd_menu(_: argparse.Namespace) -> int:
                 return 0
             else:
                 warn("未知选项")
+        except BackToMenu:
+            info("已返回上一层")
         except CommandError as exc:
             err(str(exc))
         print("")

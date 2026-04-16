@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from sbox_tool.config_gen import build_config, build_service, write_json
-from sbox_tool.cli import _build_streaming_dns, _prompt_reality_domain, _recommended_reality_domains
+from sbox_tool.cli import BackToMenu, _build_streaming_dns, _prompt_choice, _prompt_reality_domain, _recommended_reality_domains
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
 from sbox_tool.domain_probe import ProbeResult, available_regions, parse_domain_list
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
@@ -210,6 +210,11 @@ class GenerationTests(unittest.TestCase):
             ProbeResult("three.example", True, True, True, 200, 0.4),
         ]
         self.assertEqual(_prompt_reality_domain("us"), "two.example")
+
+    @mock.patch("builtins.input", return_value="0")
+    def test_prompt_choice_can_return_to_previous_menu(self, _: mock.Mock) -> None:
+        with self.assertRaises(BackToMenu):
+            _prompt_choice("请选择: ", {"1", "2"}, "1", allow_back=True)
 
     def test_reality_keys_from_existing(self) -> None:
         original = generate_reality_keys()
