@@ -34,6 +34,6 @@ fi
 
 export PYTHONPATH="${ROOT_DIR}/lib"
 if [[ $# -eq 0 ]]; then
-  exec python3 -m sbox_tool.cli probe --region us
+  exec python3 -m sbox_tool.cli probe --list-regions
 fi
 exec python3 -m sbox_tool.cli probe "$@"

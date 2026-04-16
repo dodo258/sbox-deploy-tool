@@ -1,7 +1,8 @@
 param(
     [string]$Region = "us",
     [string]$Domains,
-    [switch]$ListRegions
+    [switch]$ListRegions,
+    [string]$ServerIp
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +38,8 @@ try {
     $probeArgs = @("-m", "sbox_tool.cli", "probe")
     if ($ListRegions) {
         $probeArgs += "--list-regions"
+    } elseif ($ServerIp) {
+        $probeArgs += @("--server-ip", $ServerIp)
     } elseif ($Domains) {
         $probeArgs += @("--domains", $Domains)
     } else {

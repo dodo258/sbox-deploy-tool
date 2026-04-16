@@ -10,6 +10,7 @@ from .config_gen import build_config, build_manifest, build_service, write_json
 from .crypto import generate_reality_keys
 from .domain_probe import available_regions, load_candidates, parse_domain_list, rank_domains
 from .exports import export_mihomo_proxy, export_vless_url
+from .geo import lookup_ip_metadata
 from .models import BackendType, DeployPlan, NodeSpec, RealityKeys, StreamingDnsSpec
 from .profiles import STREAMING_PROFILES, get_profile
 from .remote_ops import (
@@ -322,16 +323,34 @@ def _print_bbr_summary(status: dict[str, str | bool]) -> None:
 
 def _print_probe_help() -> None:
     section("Reality Local Probe")
+    detected = None
+    try:
+        server_ip = detect_primary_ipv4()
+        detected = lookup_ip_metadata(server_ip)
+    except Exception:
+        detected = None
+    if detected:
+        country = detected["country"] or detected["country_code"] or "unknown"
+        print(f"detected server ip: {detected['server_ip']}")
+        print(f"detected probe region: {detected['probe_region']} ({country})")
+        print("")
     print("macOS / Linux:")
-    print("  bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) us")
-    print("  bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --list-regions")
-    print("  bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) --domains www.example.com,www.example.net")
+    if detected:
+        print(
+            "  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | "
+            f"bash -s -- --server-ip {detected['server_ip']}"
+        )
+    print("  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | bash -s -- --list-regions")
     print("")
     print("Windows PowerShell:")
-    print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex")
+    if detected:
+        print(
+            "  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | "
+            f"iex -ServerIp {detected['server_ip']}"
+        )
     print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ListRegions")
-    print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -Domains 'www.example.com,www.example.net'")
     print("")
+    print("优选结果只使用脚本内置地区池，不对小白开放自定义域名输入。")
     print("先在本地电脑优选，再把域名填回服务器端向导。")
 
 
@@ -343,7 +362,14 @@ def cmd_probe(args: argparse.Namespace) -> int:
         for region in available_regions():
             print(f"  - {region}")
         return 0
-    if args.domains:
+    if args.server_ip:
+        detected = lookup_ip_metadata(args.server_ip)
+        print(
+            f"server_ip={detected['server_ip']} country={detected['country'] or detected['country_code'] or 'unknown'} "
+            f"probe_region={detected['probe_region']}"
+        )
+        domains = pools.get(detected["probe_region"], [])
+    elif args.domains:
         domains = parse_domain_list(args.domains)
     else:
         region = _normalize_region(args.region or "")
@@ -539,9 +565,19 @@ def _prompt_choice(prompt: str, valid: set[str], default: str) -> str:
     return raw
 
 
-def _prompt_region() -> str:
-    raw = input("region label (example: us / eu / sea / latam / africa, default us): ").strip().lower()
-    return raw or "us"
+def _prompt_region(default_region: str = "us") -> str:
+    raw = input(f"region label (default {default_region}): ").strip().lower()
+    return raw or default_region
+
+
+def _detect_server_region_label() -> tuple[str, str | None]:
+    try:
+        server_ip = detect_primary_ipv4()
+        detected = lookup_ip_metadata(server_ip)
+        country = detected["country"] or detected["country_code"] or None
+        return detected["probe_region"], country
+    except Exception:
+        return "us", None
 
 
 def _prompt_streaming_profile() -> tuple[str, str | None]:
@@ -570,7 +606,9 @@ def _interactive_deploy(backend: BackendType) -> int:
     mode = _prompt_choice("select mode (default 1): ", {"1", "2", "3"}, "1")
     role = "media" if mode == "2" else "main"
     enable_streaming_dns = mode in {"2", "3"}
-    region = _prompt_region()
+    detected_region, detected_country = _detect_server_region_label()
+    print(f"detected region pool: {detected_region}" + (f" ({detected_country})" if detected_country else ""))
+    region = _prompt_region(detected_region)
     default_port = "2443" if role == "media" else "443"
     port = int(input(f"listen port (default {default_port}): ").strip() or default_port)
     validate_port(port)
@@ -678,7 +716,7 @@ def cmd_init(_: argparse.Namespace) -> int:
     info("also supports xray with the same node workflow")
     print("")
     print("Start on server:")
-    print("  sudo bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh)")
+    print("  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh | sudo bash")
     print("")
     print("Useful commands:")
     print("  ./bin/sboxctl menu")
@@ -686,7 +724,7 @@ def cmd_init(_: argparse.Namespace) -> int:
     print("  ./bin/sboxctl show-links")
     print("  ./bin/sboxctl bbr-status")
     print("  sudo ./bin/sboxctl firewall --show-status")
-    print("  ./bin/sboxctl import-xray --input <XRAY_JSON> --role main --region us --backend sing-box")
+    print("  ./bin/sboxctl import-xray --input <XRAY_JSON> --role main --region <REGION_LABEL> --backend sing-box")
     return 0
 
 
@@ -774,8 +812,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     probe = sub.add_parser("probe", help="probe candidate reality domains")
     probe.add_argument("--region")
-    probe.add_argument("--domains", help="comma-separated domain list for custom probing")
+    probe.add_argument("--domains", help=argparse.SUPPRESS)
     probe.add_argument("--list-regions", action="store_true")
+    probe.add_argument("--server-ip", help="detect built-in region pool from server IP")
     probe.add_argument("--timeout", type=int, default=6)
     probe.add_argument("--limit", type=int, default=8)
     probe.set_defaults(func=cmd_probe)

@@ -11,6 +11,7 @@ from sbox_tool.cli import _build_streaming_dns
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
 from sbox_tool.domain_probe import available_regions, parse_domain_list
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
+from sbox_tool.geo import map_country_to_probe_region
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
 from sbox_tool.profiles import get_profile
 from sbox_tool.remote_ops import build_scp_base, render_prepare_remote_dir_command, render_remote_deploy_command
@@ -175,6 +176,11 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("eu", regions)
         self.assertIn("latam", regions)
         self.assertEqual(parse_domain_list("a.example.com, b.example.com"), ["a.example.com", "b.example.com"])
+
+    def test_country_to_probe_region_mapping(self) -> None:
+        self.assertEqual(map_country_to_probe_region("DE", "EU"), "de")
+        self.assertEqual(map_country_to_probe_region("BR", "SA"), "latam")
+        self.assertEqual(map_country_to_probe_region(None, "AF"), "africa")
 
     def test_reality_keys_from_existing(self) -> None:
         original = generate_reality_keys()
