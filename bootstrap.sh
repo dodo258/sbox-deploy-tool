@@ -66,9 +66,11 @@ run_installer() {
   fi
 }
 
-if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_SKIP_DOWNLOAD_IF_INSTALLED:-0}" == "1" ]]; then
+if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_FORCE_UPDATE:-0}" != "1" ]]; then
   print_logo
-  info "existing install found at ${INSTALL_DIR}, skipping download"
+  ok "existing install found at ${INSTALL_DIR}"
+  info "opening the installed menu directly"
+  info "set SBOXCTL_FORCE_UPDATE=1 if you want to refresh from GitHub"
   run_installer
   exit $?
 fi

@@ -25,16 +25,16 @@ sboxctl menu
 
 说明：
 
-- 第一次安装，或者你再次用 raw 一键命令拉最新版本时，会下载脚本包
-- 如果只是重新进入菜单，不需要再执行 raw 命令，直接运行 `sboxctl menu`
+- 第一次安装会下载脚本包并进入菜单
+- 如果服务器里已经安装过，再次执行 raw 一键命令会直接进入已安装菜单
+- 只在你显式设置 `SBOXCTL_FORCE_UPDATE=1` 时，才会重新从 GitHub 刷新脚本包
+- 如果只是重新进入菜单，也可以直接运行 `sboxctl menu`
 
 ## 仓库结构
 
 - `bootstrap.sh`：服务器端 raw 一键入口
 - `install.sh`：启动脚本
 - `bin/sboxctl`：主命令入口
-- `scripts/probe-reality.sh`：macOS / Linux 本地域名优选
-- `scripts/probe-reality.ps1`：Windows 本地域名优选
 - `docs/USAGE.md`：中文使用说明
 - `docs/ROADMAP.md`：开发路线
 

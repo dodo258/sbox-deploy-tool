@@ -14,8 +14,10 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 
 说明：
 
-- 第一次安装，或者你再次用 raw 一键命令拉最新版本时，会下载脚本包
-- 如果只是重新进入菜单，不需要再执行 raw 命令，直接运行 `sboxctl menu`
+- 第一次安装会下载脚本包并进入菜单
+- 如果服务器里已经安装过，再次执行 raw 一键命令会直接进入已安装菜单
+- 只在你显式设置 `SBOXCTL_FORCE_UPDATE=1` 时，才会重新从 GitHub 刷新脚本包
+- 如果只是重新进入菜单，也可以直接运行 `sboxctl menu`
 
 ### 3. 进入交互首页
 
