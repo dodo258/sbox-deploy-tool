@@ -21,12 +21,12 @@ step() {
 }
 
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "please run as root"
+  echo "请使用 root 运行安装器"
   exit 1
 fi
 
 if ! command -v apt-get >/dev/null 2>&1; then
-  echo "this first version supports Debian/Ubuntu only"
+  echo "当前版本仅支持 Debian/Ubuntu"
   exit 1
 fi
 
@@ -34,20 +34,20 @@ MISSING_PKGS=()
 command -v python3 >/dev/null 2>&1 || MISSING_PKGS+=("python3")
 
 if (( ${#MISSING_PKGS[@]} > 0 )); then
-  step "installing runtime dependencies: ${MISSING_PKGS[*]}"
+  step "正在安装运行依赖: ${MISSING_PKGS[*]}"
   apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true
   apt-get install -y "${MISSING_PKGS[@]}"
 else
-  ok "runtime dependencies ready"
+  ok "运行依赖已就绪"
 fi
 
 chmod +x "${ROOT_DIR}/bin/sboxctl"
 ln -sf "${ROOT_DIR}/bin/sboxctl" /usr/local/bin/sboxctl
-ok "global command ready: sboxctl"
+ok "全局命令已就绪: sboxctl"
 
 if [[ ! -t 0 && -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
-info "launching interactive menu"
+info "正在启动交互菜单"
 exec "${ROOT_DIR}/bin/sboxctl" menu

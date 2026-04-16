@@ -33,12 +33,12 @@ step() {
 }
 
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "[ERR] please run bootstrap as root"
+  echo "[ERR] 请用 root 执行引导脚本"
   exit 1
 fi
 
 if ! command -v apt-get >/dev/null 2>&1; then
-  echo "[ERR] this bootstrap currently supports Debian/Ubuntu only"
+  echo "[ERR] 当前引导脚本仅支持 Debian/Ubuntu"
   exit 1
 fi
 
@@ -51,11 +51,11 @@ if [[ ! -f /etc/ssl/certs/ca-certificates.crt ]]; then
 fi
 
 if (( ${#MISSING_PKGS[@]} > 0 )); then
-  step "installing bootstrap dependencies: ${MISSING_PKGS[*]}"
+  step "正在安装引导依赖: ${MISSING_PKGS[*]}"
   apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true
   apt-get install -y "${MISSING_PKGS[@]}"
 else
-  ok "bootstrap dependencies ready"
+  ok "引导依赖已就绪"
 fi
 
 run_installer() {
@@ -68,9 +68,9 @@ run_installer() {
 
 if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_FORCE_UPDATE:-0}" != "1" ]]; then
   print_logo
-  ok "existing install found at ${INSTALL_DIR}"
-  info "opening the installed menu directly"
-  info "set SBOXCTL_FORCE_UPDATE=1 if you want to refresh from GitHub"
+  ok "检测到现有安装: ${INSTALL_DIR}"
+  info "正在直接打开已安装菜单"
+  info "如需强制从 GitHub 更新，请先设置 SBOXCTL_FORCE_UPDATE=1"
   run_installer
   exit $?
 fi
@@ -84,19 +84,19 @@ cleanup() {
 trap cleanup EXIT
 
 print_logo
-step "downloading latest tool package"
-info "first install or update will download the package, then enter the menu"
+step "正在下载最新工具包"
+info "首次安装或强制更新时会先下载工具包，然后进入菜单"
 curl -#fL "${ARCHIVE_URL}" -o "${ARCHIVE_PATH}"
 printf "\n"
 
 rm -rf "${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
-step "unpacking package"
+step "正在解压工具包"
 tar -xzf "${ARCHIVE_PATH}" -C "${INSTALL_DIR}" --strip-components=1
 
 chmod +x "${INSTALL_DIR}/install.sh"
 chmod +x "${INSTALL_DIR}/bin/sboxctl"
 
-ok "unpacked to ${INSTALL_DIR}"
-step "starting interactive menu"
+ok "已解压到 ${INSTALL_DIR}"
+step "正在进入交互菜单"
 run_installer
