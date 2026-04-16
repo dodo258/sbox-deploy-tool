@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .config_gen import build_config, build_manifest, build_service, write_json
 from .crypto import generate_reality_keys
-from .domain_probe import ProbeResult, available_regions, load_candidates, parse_domain_list, rank_domains
+from .domain_probe import ProbeResult, available_regions, candidate_pool_for_region, load_candidates, parse_domain_list, rank_domains
 from .exports import export_mihomo_proxy, export_vless_url
 from .geo import lookup_ip_metadata
 from .models import BackendType, DeployPlan, NodeSpec, RealityKeys, StreamingDnsSpec
@@ -710,8 +710,7 @@ def _prompt_streaming_profile() -> tuple[str, str | None]:
 
 
 def _recommended_reality_domains(region: str, limit: int = 3, timeout: int = 4) -> list[ProbeResult]:
-    pools = load_candidates()
-    candidates = pools.get(region, [])
+    candidates = candidate_pool_for_region(region)
     if not candidates:
         raise CommandError(f"当前地区没有内置候选域名池: {region}")
     info(f"正在探测内置 Reality 域名，地区池: {region}")
@@ -729,10 +728,13 @@ def _prompt_reality_domain(region: str) -> str:
     valid_choices = set()
     for index, item in enumerate(options, start=1):
         valid_choices.add(str(index))
-        status = item.status_code if item.status_code is not None else "-"
-        ttfb = f"{item.ttfb:.3f}s" if item.ttfb is not None else "-"
-        note = f" | note={item.note}" if item.note else ""
-        print(f"  {index}) {item.domain} | score={item.score} | code={status} | ttfb={ttfb}{note}")
+        if item.ok and item.ttfb is not None:
+            latency = f"{int(round(item.ttfb * 1000))}ms"
+        elif item.ttfb is not None:
+            latency = f"{int(round(item.ttfb * 1000))}ms（兼容性一般）"
+        else:
+            latency = "当前网络探测失败"
+        print(f"  {index}) {item.domain} | 延迟 {latency}")
     print("  0) 返回上一层")
     choice = _prompt_choice("请选择 Reality 域名（默认 1）: ", valid_choices, "1", allow_back=True)
     return options[int(choice) - 1].domain

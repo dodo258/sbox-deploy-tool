@@ -9,7 +9,7 @@ from unittest import mock
 from sbox_tool.config_gen import build_config, build_service, write_json
 from sbox_tool.cli import BackToMenu, _build_streaming_dns, _prompt_choice, _prompt_reality_domain, _recommended_reality_domains
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
-from sbox_tool.domain_probe import ProbeResult, available_regions, parse_domain_list
+from sbox_tool.domain_probe import ProbeResult, available_regions, candidate_pool_for_region, parse_domain_list
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.geo import map_country_to_probe_region
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
@@ -183,6 +183,12 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("eu", regions)
         self.assertIn("latam", regions)
         self.assertEqual(parse_domain_list("a.example.com, b.example.com"), ["a.example.com", "b.example.com"])
+
+    def test_candidate_pool_for_region_uses_fallback_groups(self) -> None:
+        hk_pool = candidate_pool_for_region("hk")
+        self.assertIn("www.mannings.com.hk", hk_pool)
+        self.assertIn("www.momoshop.com.tw", hk_pool)
+        self.assertIn("www.fairprice.com.sg", hk_pool)
 
     def test_country_to_probe_region_mapping(self) -> None:
         self.assertEqual(map_country_to_probe_region("DE", "EU"), "de")

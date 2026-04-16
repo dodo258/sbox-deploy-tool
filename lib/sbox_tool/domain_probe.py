@@ -9,6 +9,25 @@ from pathlib import Path
 
 CANDIDATES_FILE = Path(__file__).resolve().parents[2] / "templates" / "candidate_domains.json"
 
+REGION_POOL_FALLBACKS: dict[str, list[str]] = {
+    "hk": ["hk", "tw", "sg", "sea"],
+    "tw": ["tw", "hk", "sg", "sea"],
+    "sg": ["sg", "sea", "hk", "tw"],
+    "sea": ["sea", "sg", "hk", "tw"],
+    "jp": ["jp", "sg", "sea"],
+    "kr": ["kr", "jp", "sg"],
+    "eu": ["eu", "uk", "de", "fr"],
+    "uk": ["uk", "eu", "de", "fr"],
+    "de": ["de", "eu", "uk", "fr"],
+    "fr": ["fr", "eu", "de", "uk"],
+    "oceania": ["oceania", "sg", "sea"],
+    "middle-east": ["middle-east", "eu"],
+    "africa": ["africa", "eu", "middle-east"],
+    "latam": ["latam", "us"],
+    "in": ["in", "sea", "sg"],
+    "us": ["us"],
+}
+
 
 @dataclass(slots=True)
 class ProbeResult:
@@ -48,6 +67,19 @@ def available_regions() -> list[str]:
 
 def parse_domain_list(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def candidate_pool_for_region(region: str) -> list[str]:
+    pools = load_candidates()
+    ordered_regions = REGION_POOL_FALLBACKS.get(region, [region])
+    merged: list[str] = []
+    seen: set[str] = set()
+    for pool_region in ordered_regions:
+        for domain in pools.get(pool_region, []):
+            if domain not in seen:
+                seen.add(domain)
+                merged.append(domain)
+    return merged
 
 
 def probe_domain(domain: str, timeout: int = 6) -> ProbeResult:
