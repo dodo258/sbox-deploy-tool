@@ -58,17 +58,19 @@ else
   ok "bootstrap dependencies ready"
 fi
 
-attach_tty() {
-  if [[ ! -t 0 && -r /dev/tty ]]; then
-    exec </dev/tty
+run_installer() {
+  if [[ -r /dev/tty ]]; then
+    bash "${INSTALL_DIR}/install.sh" </dev/tty
+  else
+    bash "${INSTALL_DIR}/install.sh"
   fi
 }
 
 if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_SKIP_DOWNLOAD_IF_INSTALLED:-0}" == "1" ]]; then
   print_logo
   info "existing install found at ${INSTALL_DIR}, skipping download"
-  attach_tty
-  exec "${INSTALL_DIR}/install.sh"
+  run_installer
+  exit $?
 fi
 
 TMP_DIR="$(mktemp -d)"
@@ -95,5 +97,4 @@ chmod +x "${INSTALL_DIR}/bin/sboxctl"
 
 ok "unpacked to ${INSTALL_DIR}"
 step "starting interactive menu"
-attach_tty
-exec "${INSTALL_DIR}/install.sh"
+run_installer
