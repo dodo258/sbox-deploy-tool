@@ -23,6 +23,11 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 sboxctl menu
 ```
 
+说明：
+
+- 第一次安装，或者你再次用 raw 一键命令拉最新版本时，会下载脚本包
+- 如果只是重新进入菜单，不需要再执行 raw 命令，直接运行 `sboxctl menu`
+
 ## 仓库结构
 
 - `bootstrap.sh`：服务器端 raw 一键入口

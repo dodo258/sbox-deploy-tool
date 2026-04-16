@@ -29,7 +29,7 @@ if (( ${#MISSING_PKGS[@]} > 0 )); then
   apt-get install -y "${MISSING_PKGS[@]}"
 fi
 
-if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_FORCE_UPDATE:-0}" != "1" ]]; then
+if [[ -x "${INSTALL_DIR}/install.sh" && -x "${INSTALL_DIR}/bin/sboxctl" && "${SBOXCTL_SKIP_DOWNLOAD_IF_INSTALLED:-0}" == "1" ]]; then
   echo "[INFO] existing install found at ${INSTALL_DIR}, skipping download"
   exec "${INSTALL_DIR}/install.sh"
 fi
