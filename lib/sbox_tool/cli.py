@@ -713,10 +713,11 @@ def _recommended_reality_domains(region: str, limit: int = 3, timeout: int = 4) 
     candidates = candidate_pool_for_region(region)
     if not candidates:
         raise CommandError(f"当前地区没有内置候选域名池: {region}")
-    info(f"正在探测内置 Reality 域名，地区池: {region}")
+    info(f"正在并行测速内置 Reality 域名，地区池: {region}，候选数量: {len(candidates)}")
     ranked = rank_domains(candidates, timeout=timeout)
     preferred = [item for item in ranked if item.ok]
-    selected = preferred[:limit] if preferred else ranked[:limit]
+    usable = preferred or [item for item in ranked if item.ttfb is not None] or ranked
+    selected = usable[:limit]
     if not selected:
         raise CommandError(f"当前地区没有可用的 Reality 候选域名: {region}")
     return selected
@@ -731,9 +732,9 @@ def _prompt_reality_domain(region: str) -> str:
         if item.ok and item.ttfb is not None:
             latency = f"{int(round(item.ttfb * 1000))}ms"
         elif item.ttfb is not None:
-            latency = f"{int(round(item.ttfb * 1000))}ms（兼容性一般）"
+            latency = f"{int(round(item.ttfb * 1000))}ms"
         else:
-            latency = "当前网络探测失败"
+            latency = "测速失败"
         print(f"  {index}) {item.domain} | 延迟 {latency}")
     print("  0) 返回上一层")
     choice = _prompt_choice("请选择 Reality 域名（默认 1）: ", valid_choices, "1", allow_back=True)

@@ -1,4 +1,14 @@
 {
+  "global": [
+    "www.dhl.com",
+    "www.ikea.com",
+    "www.dell.com",
+    "www.hp.com",
+    "www.lenovo.com",
+    "www.acer.com",
+    "www.asus.com",
+    "www.canon.com"
+  ],
   "us": [
     "www.zoro.com",
     "www.grainger.com",
@@ -59,7 +69,9 @@
     "www.watsons.com.hk",
     "www.hktdc.com",
     "www.hongkongairport.com",
-    "www.pccw.com"
+    "www.pccw.com",
+    "www.lenovo.com",
+    "www.hp.com"
   ],
   "tw": [
     "24h.pchome.com.tw",
@@ -73,7 +85,8 @@
     "www.courts.com.sg",
     "www.starhub.com",
     "www.singtel.com",
-    "www.capitaland.com"
+    "www.capitaland.com",
+    "www.dhl.com"
   ],
   "sea": [
     "www.lazada.com",

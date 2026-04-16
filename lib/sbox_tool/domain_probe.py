@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,22 +11,22 @@ from pathlib import Path
 CANDIDATES_FILE = Path(__file__).resolve().parents[2] / "templates" / "candidate_domains.json"
 
 REGION_POOL_FALLBACKS: dict[str, list[str]] = {
-    "hk": ["hk", "tw", "sg", "sea"],
-    "tw": ["tw", "hk", "sg", "sea"],
-    "sg": ["sg", "sea", "hk", "tw"],
-    "sea": ["sea", "sg", "hk", "tw"],
-    "jp": ["jp", "sg", "sea"],
-    "kr": ["kr", "jp", "sg"],
-    "eu": ["eu", "uk", "de", "fr"],
-    "uk": ["uk", "eu", "de", "fr"],
-    "de": ["de", "eu", "uk", "fr"],
-    "fr": ["fr", "eu", "de", "uk"],
-    "oceania": ["oceania", "sg", "sea"],
-    "middle-east": ["middle-east", "eu"],
-    "africa": ["africa", "eu", "middle-east"],
-    "latam": ["latam", "us"],
-    "in": ["in", "sea", "sg"],
-    "us": ["us"],
+    "hk": ["hk", "global"],
+    "tw": ["tw", "global"],
+    "sg": ["sg", "global"],
+    "sea": ["sea", "global"],
+    "jp": ["jp", "global"],
+    "kr": ["kr", "global"],
+    "eu": ["eu", "global"],
+    "uk": ["uk", "global"],
+    "de": ["de", "global"],
+    "fr": ["fr", "global"],
+    "oceania": ["oceania", "global"],
+    "middle-east": ["middle-east", "global"],
+    "africa": ["africa", "global"],
+    "latam": ["latam", "global"],
+    "in": ["in", "global"],
+    "us": ["us", "global"],
 }
 
 
@@ -144,5 +145,10 @@ def probe_domain(domain: str, timeout: int = 6) -> ProbeResult:
 
 
 def rank_domains(domains: list[str], timeout: int = 6) -> list[ProbeResult]:
-    results = [probe_domain(domain, timeout=timeout) for domain in domains]
+    worker_count = min(max(1, len(domains)), 6)
+    results: list[ProbeResult] = []
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {executor.submit(probe_domain, domain, timeout): domain for domain in domains}
+        for future in as_completed(futures):
+            results.append(future.result())
     return sorted(results, key=lambda item: item.score, reverse=True)

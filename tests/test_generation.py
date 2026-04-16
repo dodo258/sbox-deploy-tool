@@ -187,8 +187,8 @@ class GenerationTests(unittest.TestCase):
     def test_candidate_pool_for_region_uses_fallback_groups(self) -> None:
         hk_pool = candidate_pool_for_region("hk")
         self.assertIn("www.mannings.com.hk", hk_pool)
-        self.assertIn("www.momoshop.com.tw", hk_pool)
-        self.assertIn("www.fairprice.com.sg", hk_pool)
+        self.assertIn("www.dell.com", hk_pool)
+        self.assertNotIn("www.momoshop.com.tw", hk_pool)
 
     def test_country_to_probe_region_mapping(self) -> None:
         self.assertEqual(map_country_to_probe_region("DE", "EU"), "de")
