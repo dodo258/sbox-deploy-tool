@@ -10,7 +10,13 @@ import subprocess
 import tarfile
 import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
+
+from .models import BackendType
+
+
+MANIFEST_ROOT = Path("/etc/sboxctl/nodes")
 
 
 class CommandError(RuntimeError):
@@ -59,7 +65,7 @@ def read_sysctl_value(key: str) -> str:
     return (completed.stdout or "").strip()
 
 
-def arch_slug() -> str:
+def arch_slug_singbox() -> str:
     machine = platform.machine().lower()
     mapping = {
         "x86_64": "amd64",
@@ -73,25 +79,54 @@ def arch_slug() -> str:
         raise CommandError(f"unsupported architecture: {machine}") from exc
 
 
+def arch_slug_xray() -> str:
+    machine = platform.machine().lower()
+    mapping = {
+        "x86_64": "64",
+        "amd64": "64",
+        "aarch64": "arm64-v8a",
+        "arm64": "arm64-v8a",
+    }
+    try:
+        return mapping[machine]
+    except KeyError as exc:
+        raise CommandError(f"unsupported architecture: {machine}") from exc
+
+
 def resolve_singbox_version(version: str) -> str:
     if version != "latest":
         return version.removeprefix("v")
     with urllib.request.urlopen("https://api.github.com/repos/SagerNet/sing-box/releases/latest", timeout=15) as resp:
         payload = json.loads(resp.read().decode())
-    tag = payload["tag_name"]
-    return tag.removeprefix("v")
+    return payload["tag_name"].removeprefix("v")
 
 
-def installed_singbox_version() -> str | None:
-    binary = Path("/usr/local/bin/sing-box")
-    if not binary.exists():
+def resolve_xray_version(version: str) -> str:
+    if version != "latest":
+        return version.removeprefix("v")
+    with urllib.request.urlopen("https://api.github.com/repos/XTLS/Xray-core/releases/latest", timeout=15) as resp:
+        payload = json.loads(resp.read().decode())
+    return payload["tag_name"].removeprefix("v")
+
+
+def _installed_binary_version(binary: str, pattern: str) -> str | None:
+    path = Path(f"/usr/local/bin/{binary}")
+    if not path.exists():
         return None
-    completed = run([str(binary), "version"], check=False)
+    completed = run([str(path), "version"], check=False)
     output = (completed.stdout or completed.stderr or "").strip()
-    match = re.search(r"sing-box version (\d+\.\d+\.\d+)", output)
+    match = re.search(pattern, output)
     if match:
         return match.group(1)
     return None
+
+
+def installed_singbox_version() -> str | None:
+    return _installed_binary_version("sing-box", r"sing-box version (\d+\.\d+\.\d+)")
+
+
+def installed_xray_version() -> str | None:
+    return _installed_binary_version("xray", r"\b(\d+\.\d+\.\d+)\b")
 
 
 def install_singbox(version: str = "latest") -> str:
@@ -100,7 +135,7 @@ def install_singbox(version: str = "latest") -> str:
     current = installed_singbox_version()
     if current == resolved:
         return resolved
-    arch = arch_slug()
+    arch = arch_slug_singbox()
     url = f"https://github.com/SagerNet/sing-box/releases/download/v{resolved}/sing-box-{resolved}-linux-{arch}.tar.gz"
     with tempfile.TemporaryDirectory() as tmp:
         tarball = Path(tmp) / "sing-box.tar.gz"
@@ -113,6 +148,53 @@ def install_singbox(version: str = "latest") -> str:
         shutil.copy2(binary, "/usr/local/bin/sing-box")
         os.chmod("/usr/local/bin/sing-box", 0o755)
     return resolved
+
+
+def install_xray(version: str = "latest") -> str:
+    require_root()
+    resolved = resolve_xray_version(version)
+    current = installed_xray_version()
+    if current == resolved:
+        return resolved
+    arch = arch_slug_xray()
+    url = f"https://github.com/XTLS/Xray-core/releases/download/v{resolved}/Xray-linux-{arch}.zip"
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "xray.zip"
+        extracted = Path(tmp) / "extract"
+        extracted.mkdir()
+        urllib.request.urlretrieve(url, archive)
+        with zipfile.ZipFile(archive) as zf:
+            zf.extractall(extracted)
+        binary = extracted / "xray"
+        if not binary.exists():
+            raise CommandError("downloaded xray archive did not contain xray binary")
+        shutil.copy2(binary, "/usr/local/bin/xray")
+        os.chmod("/usr/local/bin/xray", 0o755)
+    return resolved
+
+
+def install_backend(backend: BackendType, version: str = "latest") -> str:
+    if backend == "sing-box":
+        return install_singbox(version)
+    return install_xray(version)
+
+
+def installed_backend_version(backend: BackendType) -> str | None:
+    if backend == "sing-box":
+        return installed_singbox_version()
+    return installed_xray_version()
+
+
+def default_install_root(backend: BackendType) -> Path:
+    return Path("/etc/sing-box" if backend == "sing-box" else "/etc/xray")
+
+
+def default_binary_name(backend: BackendType) -> str:
+    return "sing-box" if backend == "sing-box" else "xray"
+
+
+def default_service_prefix(backend: BackendType) -> str:
+    return "sing-box" if backend == "sing-box" else "xray"
 
 
 def detect_primary_ipv4() -> str:
@@ -214,14 +296,22 @@ def enable_bbr(sysctl_conf: Path = Path("/etc/sysctl.d/99-sboxctl-bbr.conf")) ->
     return status
 
 
-def ensure_ufw_ports(ports: list[int]) -> None:
+def ensure_bbr_enabled() -> dict[str, str | bool]:
+    status = bbr_status()
+    if not status["enabled"] or not status["fq_ready"]:
+        return enable_bbr()
+    return status
+
+
+def enforce_ufw_tcp_allowlist(ports: list[int]) -> None:
     require_root()
     if shutil.which("ufw") is None:
         raise CommandError("ufw not found")
-    for port in sorted(set(ports)):
-        run(["ufw", "allow", f"{port}/tcp"])
+    run(["ufw", "--force", "reset"])
     run(["ufw", "default", "deny", "incoming"])
     run(["ufw", "default", "allow", "outgoing"])
+    for port in sorted(set(ports)):
+        run(["ufw", "allow", f"{port}/tcp"])
     run(["ufw", "--force", "enable"])
 
 
@@ -282,3 +372,42 @@ def wait_for_service(service_name: str, port: int, timeout: int = 12) -> tuple[s
             return active, True
         subprocess.run(["sleep", "1"], check=False)
     return last_active, port_is_listening(port)
+
+
+def write_node_manifest(tag: str, payload: dict, manifest_root: Path = MANIFEST_ROOT) -> Path:
+    require_root()
+    manifest_root.mkdir(parents=True, exist_ok=True)
+    target = manifest_root / f"{tag}.json"
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+    return target
+
+
+def load_node_manifests(manifest_root: Path = MANIFEST_ROOT) -> list[dict]:
+    if not manifest_root.exists():
+        return []
+    payloads: list[dict] = []
+    for path in sorted(manifest_root.glob("*.json")):
+        try:
+            payloads.append(json.loads(path.read_text()))
+        except Exception:
+            continue
+    return payloads
+
+
+def collect_manifest_ports(manifests: list[dict]) -> list[int]:
+    ports: list[int] = []
+    for item in manifests:
+        try:
+            ports.append(int(item["node"]["listen_port"]))
+        except Exception:
+            continue
+    return sorted(set(ports))
+
+
+def collect_manifest_services(manifests: list[dict]) -> list[str]:
+    services: list[str] = []
+    for item in manifests:
+        name = str(item.get("service_name") or "").strip()
+        if name:
+            services.append(name)
+    return sorted(set(services))

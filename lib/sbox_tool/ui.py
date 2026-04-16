@@ -20,7 +20,7 @@ LOGO = rf"""
  ___/ / /_/ / /_/ />  < / /_/ / /_/ />  <  
 /____/_.___/\____/_/|_|/_____/\____/_/|_|  
 {RESET}
-{DIM}dodo258 sing-box deploy tool | reality | media dns | exports{RESET}
+{DIM}dodo258 deploy tool | sing-box / xray | reality | media dns{RESET}
 """
 
 

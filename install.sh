@@ -14,7 +14,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
 fi
 
 apt-get update
-apt-get install -y ca-certificates curl tar gzip unzip openssl jq ufw python3 python3-cryptography
+apt-get install -y ca-certificates curl tar gzip unzip zip openssl jq ufw python3 python3-cryptography
 
 chmod +x "${ROOT_DIR}/bin/sboxctl"
-exec "${ROOT_DIR}/bin/sboxctl" wizard
+exec "${ROOT_DIR}/bin/sboxctl" menu

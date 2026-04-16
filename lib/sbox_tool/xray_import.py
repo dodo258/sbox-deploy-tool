@@ -13,6 +13,16 @@ def _first(items: list, label: str):
     return items[0]
 
 
+def _server_name_from_reality_settings(reality_settings: dict) -> str:
+    server_names = reality_settings.get("serverNames") or []
+    if server_names:
+        return _first(server_names, "realitySettings.serverNames")
+    target = reality_settings.get("target") or reality_settings.get("dest")
+    if isinstance(target, str) and ":" in target:
+        return target.rsplit(":", 1)[0]
+    raise ValueError("xray config missing reality server name")
+
+
 def load_xray_reality_node(
     path: Path,
     *,
@@ -42,10 +52,9 @@ def load_xray_reality_node(
 
     stream = inbound.get("streamSettings", {})
     reality_settings = stream.get("realitySettings", {})
-    server_names = reality_settings.get("serverNames") or []
     short_ids = reality_settings.get("shortIds") or []
 
-    server_name = _first(server_names, "realitySettings.serverNames")
+    server_name = _server_name_from_reality_settings(reality_settings)
     short_id = _first(short_ids, "realitySettings.shortIds")
     private_key = reality_settings.get("privateKey")
     if not private_key:

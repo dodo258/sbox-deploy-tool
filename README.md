@@ -1,130 +1,146 @@
 # dodo258 / SBox Deploy Tool
 
-一个面向 `Ubuntu / Debian` 服务器的 `sing-box` 一键部署工具。
+一个运行在服务器端的 `VLESS + Reality + Vision` 一键部署工具。
 
-目标很直接：
+目标不是做协议大杂烩，而是把这几件事做好：
 
-- 用户先连上自己的 SSH 服务器
-- 执行一条命令
-- 按提示填写端口、Reality 伪装域名、流媒体 DNS
-- 自动完成依赖安装、sing-box 安装、systemd、备份、防火墙处理
+- `sing-box` 和 `xray` 双后端可选
+- 默认优先 `sing-box`
+- 自动安装缺少依赖
+- 自动安装并检查 `BBR`
+- 自动安装并收口防火墙
+- 支持主节点、流媒体专用节点、主节点附加流媒体 DNS
+- 部署后自动自启动、自动后台常驻
 
-这不是“大而全”的协议合集工具。当前只做一件事：
+## 1. 服务器端一键启动
 
-- `VLESS + Reality + Vision`
-
-## 中文使用方式
-
-先 SSH 登录到服务器，然后执行：
+先 SSH 登录到你的服务器，再执行：
 
 ```bash
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh)
 ```
 
-执行后脚本会进入交互流程。
+脚本会进入交互首页。
 
-## 这个工具会帮你做什么
+首页会提供这些主选项：
 
-- 自动安装缺少的基础依赖
-- 自动安装 `sing-box`
-- 自动生成或导入 Reality 参数
-- 生成 sing-box 配置和 systemd 服务
-- 覆盖前自动备份旧文件
-- 可选启用并检查 `BBR`
-- 自动处理防火墙
+- 部署 `sing-box` 节点
+- 部署 `xray` 节点
+- 查看节点状态
+- 查看 `VLESS` 地址
+- 查看 `BBR` 状态
+- 单独调整防火墙
+- 查看本地域名优选说明
 
-## 流媒体 DNS 的使用方式
+## 2. 本地优选 Reality 域名
 
-如果你要做“流媒体专用节点”，脚本会要求你填写自己的流媒体 DNS。
+Reality 域名优选不应该在服务器上跑，而应该在你自己的本地电脑上跑。
 
-支持这几种格式：
+### macOS / Linux
 
-- 纯 IP
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh) us
+```
+
+### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex
+```
+
+优选好以后，再把域名填回服务器端一键脚本。
+
+## 3. 流媒体 DNS
+
+如果你要部署流媒体相关节点，脚本会要求你填写自己的流媒体 DNS。
+
+支持输入格式：
+
+- `IP`
 - `IP:PORT`
 - `https://...`
 - `tls://...`
 - `quic://...`
 
-脚本只会把你指定的流媒体域名交给这个 DNS 解析，不会粗暴改掉整台机器的所有 DNS 请求。
+脚本支持三种部署方式：
 
-## 防火墙规则
+- 主节点
+- 流媒体专用节点
+- 主节点 + 流媒体 DNS
 
-脚本内置了防火墙保护逻辑：
+并且支持：
 
-- 强制保留 `22/tcp`
-- 强制保留当前服务器检测到的 SSH 端口
-- 放行你部署节点使用的端口
-- 你也可以额外填写自己要放行的端口
+- 使用内置流媒体规则集合
+- 自定义要解锁的流媒体域名后缀
 
-这样做是为了避免用户把自己锁死在服务器外面。
+## 4. 防火墙策略
 
-## 常用命令
+脚本默认会自动处理防火墙，并且采用收口模式：
 
-查看工具说明：
+- 永远保留 `22/tcp`
+- 永远保留当前服务器检测到的 SSH 端口
+- 自动放行当前节点端口
+- 自动保留其他已部署节点端口
+- 其余端口默认关闭
+
+这样做是为了减少误开口，同时避免把用户锁在服务器外面。
+
+## 5. 常用命令
+
+查看总入口说明：
 
 ```bash
 ./bin/sboxctl init
 ```
 
-查看 Reality 域名探测结果：
+进入交互首页：
 
 ```bash
-./bin/sboxctl probe --region us
+sudo ./bin/sboxctl menu
 ```
 
-从旧的 Xray Reality 配置导入：
+查看已部署节点状态：
 
 ```bash
-./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <us|jp|sg>
+./bin/sboxctl show-status
 ```
 
-查看当前系统和服务状态：
+查看已部署节点的 `VLESS` 地址：
 
 ```bash
-./bin/sboxctl doctor --services <服务名> --ports <端口列表>
+./bin/sboxctl show-links
 ```
 
-查看 BBR 状态：
+查看 `BBR` 状态：
 
 ```bash
 ./bin/sboxctl bbr-status
 ```
 
-启用 BBR：
+手动重新收口防火墙：
 
 ```bash
-sudo ./bin/sboxctl enable-bbr
+sudo ./bin/sboxctl firewall --show-status
 ```
 
-单独调整防火墙：
+从旧 `xray` 配置导入：
 
 ```bash
-sudo ./bin/sboxctl firewall --allow-ports <端口列表> --show-status
+./bin/sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <us|jp|sg> --backend sing-box
 ```
 
-## 适合谁
+## 6. 仓库结构
 
-适合：
+- `bootstrap.sh`：服务器端 raw 一键入口
+- `install.sh`：启动脚本
+- `bin/sboxctl`：主命令入口
+- `scripts/probe-reality.sh`：macOS / Linux 本地域名优选
+- `scripts/probe-reality.ps1`：Windows 本地域名优选
+- `docs/USAGE.md`：中文使用说明
+- `docs/ROADMAP.md`：开发路线
 
-- 刚买 VPS，想尽快部署 sing-box 的用户
-- 需要流媒体专用节点的用户
-- 不想手动处理 systemd、备份、防火墙、BBR 的用户
+## 7. 说明
 
-不适合：
-
-- 只想手搓全部配置的高级用户
-- 需要一堆杂协议混装的人
-
-## 仓库说明
-
-- `bootstrap.sh`：服务器端一键入口
-- `install.sh`：本地启动入口
-- `bin/sboxctl`：CLI 入口
-- `docs/USAGE.md`：中文简版使用说明
-- `docs/ROADMAP.md`：后续规划
-
-## 说明
-
-- 首页只保留新手最需要看到的内容
-- 更细的高级能力会继续保留在代码里，但不会堆在首页
-- 如果你只是正常使用，一般只需要记住那条 raw 一键命令
+- 这个仓库不应该包含任何真实服务器信息、真实域名、真实测试 IP
+- 首页只保留新手真正需要看到的内容
+- 高阶玩家如果只想手动部署，可以直接阅读源码和生成逻辑

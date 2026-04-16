@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 
+BackendType = Literal["sing-box", "xray"]
 NodeRole = Literal["main", "media"]
 
 
@@ -53,6 +54,7 @@ class StreamingDnsSpec:
 
 @dataclass(slots=True)
 class DeployPlan:
+    backend: BackendType
     install_root: Path
     binary_name: str
     service_name: str

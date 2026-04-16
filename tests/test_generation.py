@@ -31,6 +31,7 @@ class GenerationTests(unittest.TestCase):
 
     def test_main_config(self) -> None:
         plan = DeployPlan(
+            backend="sing-box",
             install_root=Path("/etc/sing-box"),
             binary_name="sing-box",
             service_name="sing-box-main",
@@ -43,6 +44,7 @@ class GenerationTests(unittest.TestCase):
 
     def test_media_config(self) -> None:
         plan = DeployPlan(
+            backend="sing-box",
             install_root=Path("/etc/sing-box"),
             binary_name="sing-box",
             service_name="sing-box-media",
@@ -59,12 +61,30 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(suffix_rule["server"], "streaming-dns")
         self.assertEqual(config["dns"]["servers"][1]["type"], "udp")
 
+    def test_xray_media_config(self) -> None:
+        plan = DeployPlan(
+            backend="xray",
+            install_root=Path("/etc/xray"),
+            binary_name="xray",
+            service_name="xray-media",
+            node=self.make_node("media", 2443),
+            streaming_dns=StreamingDnsSpec(
+                provider_label="nf",
+                dns_server="192.0.2.53",
+            ),
+        )
+        config = build_config(plan)
+        self.assertEqual(config["inbounds"][0]["protocol"], "vless")
+        self.assertEqual(config["dns"]["servers"][1]["address"], "192.0.2.53")
+        self.assertIn("domain:netflix.com", config["dns"]["servers"][1]["domains"])
+
     def test_profiles(self) -> None:
         self.assertIn("disneyplus.com", get_profile("common-media"))
         self.assertIn("hbomax.com", get_profile("max"))
 
     def test_dns_server_port_parsing(self) -> None:
         plan = DeployPlan(
+            backend="sing-box",
             install_root=Path("/etc/sing-box"),
             binary_name="sing-box",
             service_name="sing-box-media",
@@ -87,8 +107,12 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["reality-opts"]["short-id"], node.reality.short_id)
 
     def test_service_render(self) -> None:
-        service = build_service("sing-box-main", "sing-box", "/etc/sing-box/main.json")
+        service = build_service("sing-box-main", "sing-box", "/etc/sing-box/main.json", "sing-box")
         self.assertIn("ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/main.json", service)
+
+    def test_xray_service_render(self) -> None:
+        service = build_service("xray-main", "xray", "/etc/xray/main.json", "xray")
+        self.assertIn("ExecStart=/usr/local/bin/xray run -config /etc/xray/main.json", service)
 
     def test_write_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
