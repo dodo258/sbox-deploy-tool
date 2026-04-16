@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config_gen import build_config, build_manifest, build_service, write_json
 from .crypto import generate_reality_keys
-from .domain_probe import available_regions, load_candidates, parse_domain_list, rank_domains
+from .domain_probe import ProbeResult, available_regions, load_candidates, parse_domain_list, rank_domains
 from .exports import export_mihomo_proxy, export_vless_url
 from .geo import lookup_ip_metadata
 from .models import BackendType, DeployPlan, NodeSpec, RealityKeys, StreamingDnsSpec
@@ -597,6 +597,34 @@ def _prompt_streaming_profile() -> tuple[str, str | None]:
     return profile, None
 
 
+def _recommended_reality_domains(region: str, limit: int = 3, timeout: int = 4) -> list[ProbeResult]:
+    pools = load_candidates()
+    candidates = pools.get(region, [])
+    if not candidates:
+        raise CommandError(f"no built-in candidate pool for region: {region}")
+    info(f"probing built-in Reality domains for region pool: {region}")
+    ranked = rank_domains(candidates, timeout=timeout)
+    preferred = [item for item in ranked if item.ok]
+    selected = preferred[:limit] if preferred else ranked[:limit]
+    if not selected:
+        raise CommandError(f"no Reality domain candidates available for region: {region}")
+    return selected
+
+
+def _prompt_reality_domain(region: str) -> str:
+    options = _recommended_reality_domains(region)
+    print("recommended reality domains:")
+    valid_choices = set()
+    for index, item in enumerate(options, start=1):
+        valid_choices.add(str(index))
+        status = item.status_code if item.status_code is not None else "-"
+        ttfb = f"{item.ttfb:.3f}s" if item.ttfb is not None else "-"
+        note = f" | note={item.note}" if item.note else ""
+        print(f"  {index}) {item.domain} | score={item.score} | code={status} | ttfb={ttfb}{note}")
+    choice = _prompt_choice("select reality domain (default 1): ", valid_choices, "1")
+    return options[int(choice) - 1].domain
+
+
 def _interactive_deploy(backend: BackendType) -> int:
     section(f"Deploy {backend}")
     print("node mode:")
@@ -612,8 +640,7 @@ def _interactive_deploy(backend: BackendType) -> int:
     default_port = "2443" if role == "media" else "443"
     port = int(input(f"listen port (default {default_port}): ").strip() or default_port)
     validate_port(port)
-    domain = input("reality domain: ").strip()
-    validate_domain(domain)
+    domain = _prompt_reality_domain(region)
     default_name = _default_name(role, region, backend)
     name = input(f"node name (default {default_name}): ").strip() or default_name
     service_name = input("systemd service name [optional]: ").strip() or None

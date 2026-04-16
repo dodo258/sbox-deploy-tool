@@ -36,26 +36,27 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 
 Reality 域名优选不应该在服务器上跑，而应该在你自己的本地电脑上跑。
 
-### macOS / Linux
+推荐流程：
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | bash -s -- --server-ip <SERVER_IP>
-curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | bash -s -- --list-regions
-```
+1. 在本地电脑上执行仓库提供的本地域名优选脚本。
+2. 把你服务器的公网 IP 传给脚本。
+3. 脚本会先根据服务器 IP 自动识别地区，再匹配对应的内置候选域名池。
+4. 本地看一下优选结果，记录前几名候选域名。
+5. 回到服务器端一键脚本，在推荐域名列表里直接选 `1 / 2 / 3`。
 
-### Windows PowerShell
+补充说明：
 
-```powershell
-irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ServerIp <SERVER_IP>
-irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ListRegions
-```
+- macOS / Linux 建议在 `bash` 或 `zsh` 环境执行。
+- 如果你本地默认是 `fish`，先切到 `bash` 或 `zsh` 再运行本地域名优选脚本。
+- Windows 端用 PowerShell 执行。
+- 如果只是想先看脚本内置了哪些地区池，可以用“列出地区池”模式。
 
 脚本会根据服务器 IP 自动匹配内置地区池。  
 内置候选池已经扩到 `us / eu / uk / de / fr / jp / kr / hk / tw / sg / sea / oceania / latam / africa / middle-east / in`。
 
 对外默认只开放内置地区池，不让小白自己填域名。
 
-优选好以后，再把域名填回服务器端一键脚本。
+服务器端部署时也会自动按地区池给出推荐域名编号，普通用户不需要手动复制域名。
 
 ## 3. 流媒体 DNS
 

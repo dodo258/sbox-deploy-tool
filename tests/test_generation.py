@@ -7,9 +7,9 @@ from pathlib import Path
 from unittest import mock
 
 from sbox_tool.config_gen import build_config, build_service, write_json
-from sbox_tool.cli import _build_streaming_dns
+from sbox_tool.cli import _build_streaming_dns, _prompt_reality_domain, _recommended_reality_domains
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
-from sbox_tool.domain_probe import available_regions, parse_domain_list
+from sbox_tool.domain_probe import ProbeResult, available_regions, parse_domain_list
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.geo import map_country_to_probe_region
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
@@ -181,6 +181,28 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(map_country_to_probe_region("DE", "EU"), "de")
         self.assertEqual(map_country_to_probe_region("BR", "SA"), "latam")
         self.assertEqual(map_country_to_probe_region(None, "AF"), "africa")
+
+    @mock.patch("sbox_tool.cli.rank_domains")
+    @mock.patch("sbox_tool.cli.load_candidates")
+    def test_recommended_reality_domains_prefers_ok_results(self, load_candidates_mock: mock.Mock, rank_domains_mock: mock.Mock) -> None:
+        load_candidates_mock.return_value = {"eu": ["a.example", "b.example", "c.example"]}
+        rank_domains_mock.return_value = [
+            ProbeResult("b.example", True, True, True, 200, 0.2),
+            ProbeResult("a.example", False, True, False, None, None, "failed"),
+            ProbeResult("c.example", True, True, True, 200, 0.4),
+        ]
+        selected = _recommended_reality_domains("eu", limit=2, timeout=1)
+        self.assertEqual([item.domain for item in selected], ["b.example", "c.example"])
+
+    @mock.patch("builtins.input", return_value="2")
+    @mock.patch("sbox_tool.cli._recommended_reality_domains")
+    def test_prompt_reality_domain_selects_by_number(self, recommended_mock: mock.Mock, _: mock.Mock) -> None:
+        recommended_mock.return_value = [
+            ProbeResult("one.example", True, True, True, 200, 0.2),
+            ProbeResult("two.example", True, True, True, 200, 0.3),
+            ProbeResult("three.example", True, True, True, 200, 0.4),
+        ]
+        self.assertEqual(_prompt_reality_domain("us"), "two.example")
 
     def test_reality_keys_from_existing(self) -> None:
         original = generate_reality_keys()
