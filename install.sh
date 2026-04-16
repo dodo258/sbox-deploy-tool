@@ -15,13 +15,6 @@ fi
 
 MISSING_PKGS=()
 command -v python3 >/dev/null 2>&1 || MISSING_PKGS+=("python3")
-if command -v python3 >/dev/null 2>&1; then
-  if ! python3 -c "import cryptography" >/dev/null 2>&1; then
-    MISSING_PKGS+=("python3-cryptography")
-  fi
-else
-  MISSING_PKGS+=("python3-cryptography")
-fi
 
 if (( ${#MISSING_PKGS[@]} > 0 )); then
   apt-get update -o Acquire::Retries=3 -o Acquire::ForceIPv4=true

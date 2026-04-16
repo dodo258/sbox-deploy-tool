@@ -90,7 +90,6 @@ def _ensure_dependencies() -> None:
             "jq",
             "ufw",
             "python3",
-            "python3-cryptography",
         ]
     )
 
