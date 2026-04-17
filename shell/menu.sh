@@ -371,6 +371,7 @@ deploy_flow() {
     fi
     warn "无效选项"
   done
+  echo ""
 
   region_upper="$(printf '%s' "$region" | tr '[:lower:]' '[:upper:]')"
   if [[ "$role" == "media" ]]; then
