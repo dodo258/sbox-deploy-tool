@@ -578,6 +578,8 @@ menu_loop() {
     if [[ "$suppress_logo_once" == "1" ]]; then
       suppress_logo_once="0"
       first_render=0
+      printf "\n"
+      print_logo
     elif [[ "$first_render" == "1" ]]; then
       clear_screen
       print_logo
