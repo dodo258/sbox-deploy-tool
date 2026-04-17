@@ -32,6 +32,37 @@ step() {
   printf "${YELLOW}[STEP]${RESET} %s\n" "$1"
 }
 
+spinner_wait() {
+  local pid="$1"
+  local message="$2"
+  local frames=('|' '/' '-' '\\')
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "\r${CYAN}[INFO]${RESET} %s %s" "$message" "${frames[$i]}"
+    i=$(( (i + 1) % 4 ))
+    sleep 0.15
+  done
+  printf "\r\033[K"
+}
+
+download_archive() {
+  local url="$1"
+  local output="$2"
+  local err_file="$3"
+  curl -fsSL "$url" -o "$output" 2>"$err_file" &
+  local curl_pid=$!
+  spinner_wait "$curl_pid" "正在下载最新工具包，请稍等"
+  if ! wait "$curl_pid"; then
+    err_msg="$(tr '\n' ' ' <"$err_file" | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
+    if [[ -z "${err_msg}" ]]; then
+      err_msg="下载失败，请检查网络后重试"
+    fi
+    echo "[ERR] ${err_msg}"
+    exit 1
+  fi
+  ok "工具包下载完成"
+}
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "[ERR] 请用 root 执行引导脚本"
   exit 1
@@ -77,6 +108,7 @@ fi
 
 TMP_DIR="$(mktemp -d)"
 ARCHIVE_PATH="${TMP_DIR}/sboxctl.tar.gz"
+ERR_PATH="${TMP_DIR}/curl.err"
 
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -86,8 +118,7 @@ trap cleanup EXIT
 print_logo
 step "正在下载最新工具包"
 info "首次安装或强制更新时会先下载工具包，然后进入菜单"
-curl -#fL "${ARCHIVE_URL}" -o "${ARCHIVE_PATH}"
-printf "\n"
+download_archive "${ARCHIVE_URL}" "${ARCHIVE_PATH}" "${ERR_PATH}"
 
 rm -rf "${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
