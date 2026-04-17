@@ -17,6 +17,7 @@ BACKEND_BIN="${ROOT_DIR}/bin/sboxctl-backend"
 
 RESET='\033[0m'
 BOLD='\033[1m'
+DIM='\033[2m'
 CYAN='\033[38;5;45m'
 GREEN='\033[38;5;41m'
 YELLOW='\033[38;5;220m'
@@ -54,6 +55,16 @@ err() {
   printf "${RED}[ERR]${RESET} %s\n" "$1"
 }
 
+clear_screen() {
+  if [[ -t 1 ]] && command -v clear >/dev/null 2>&1; then
+    clear
+  fi
+}
+
+print_compact_header() {
+  printf "${DIM}dodo258 deploy tool | main menu${RESET}\n\n"
+}
+
 pause_screen() {
   printf "\n"
   read -r -p "按回车继续..." _
@@ -77,20 +88,26 @@ import json, sys
 mode = sys.argv[1]
 data = json.load(sys.stdin)
 
+def yn(value):
+    return "是" if value else "否"
+
+def onoff(value):
+    return "已开启" if value else "未开启"
+
+def svc(value):
+    return "正常" if value == "active" else value
+
+def listen(value):
+    return "正常" if value else "未监听"
+
 if mode == "status":
     b = data["bbr"]["bbr"]
-    print(f"内核版本: {data['"'"'bbr'"'"']['"'"'kernel'"'"']}")
-    print(f"当前拥塞控制: {b['"'"'current'"'"']}")
-    print(f"系统支持项: {b['"'"'available'"'"']}")
-    print(f"默认队列: {b['"'"'qdisc'"'"']}")
-    print(f"支持 BBR: {b['"'"'has_bbr'"'"']}")
-    print(f"已启用 BBR: {b['"'"'enabled'"'"']}")
-    print(f"fq 就绪: {b['"'"'fq_ready'"'"']}")
+    print(f"BBR: {onoff(bool(b['"'"'enabled'"'"']))} | 当前算法: {b['"'"'current'"'"']} | 队列: {b['"'"'qdisc'"'"']}")
     print("")
     if not data["nodes"]:
         print("未发现已部署节点")
     for node in data["nodes"]:
-        print(f"{node['"'"'name'"'"']} | 后端={node['"'"'backend'"'"']} | 服务={node['"'"'service'"'"']} | 端口={node['"'"'port'"'"']} | 运行中={node['"'"'active'"'"']} | 开机自启={node['"'"'enabled'"'"']} | 端口监听={node['"'"'listening'"'"']}")
+        print(f"{node['"'"'name'"'"']} | 后端={node['"'"'backend'"'"']} | 端口={node['"'"'port'"'"']} | 服务={svc(node['"'"'active'"'"'])} | 自启={yn(bool(node['"'"'enabled'"'"']))} | 监听={listen(bool(node['"'"'listening'"'"']))}")
 elif mode == "links":
     if not data["nodes"]:
         print("未发现已部署节点")
@@ -100,13 +117,10 @@ elif mode == "links":
         print("")
 elif mode == "bbr":
     b = data["bbr"]
-    print(f"内核版本: {data['"'"'kernel'"'"']}")
-    print(f"当前拥塞控制: {b['"'"'current'"'"']}")
-    print(f"系统支持项: {b['"'"'available'"'"']}")
-    print(f"默认队列: {b['"'"'qdisc'"'"']}")
-    print(f"支持 BBR: {b['"'"'has_bbr'"'"']}")
-    print(f"已启用 BBR: {b['"'"'enabled'"'"']}")
-    print(f"fq 就绪: {b['"'"'fq_ready'"'"']}")
+    print(f"BBR 状态: {onoff(bool(b['"'"'enabled'"'"']))}")
+    print(f"当前算法: {b['"'"'current'"'"']}")
+    print(f"队列算法: {b['"'"'qdisc'"'"']}")
+    print(f"系统支持 BBR: {yn(bool(b['"'"'has_bbr'"'"']))}")
 elif mode == "nodes":
     for index, node in enumerate(data["nodes"], start=1):
         print(f"{index}\t{node['"'"'tag'"'"']}\t{node['"'"'name'"'"']}\t{node['"'"'backend'"'"']}\t{node['"'"'port'"'"']}\t{node['"'"'service'"'"']}")
@@ -115,11 +129,11 @@ elif mode == "domains":
         latency = f"{item['"'"'latency_ms'"'"']}ms" if item["latency_ms"] is not None else "当前网络探测失败"
         print(f"{index}\t{item['"'"'domain'"'"']}\t{latency}")
 elif mode == "deploy":
-    print(f"后端: {data['"'"'backend'"'"']} 版本: {data['"'"'version'"'"']}")
+    print(f"后端: {data['"'"'backend'"'"']} | 版本: {data['"'"'version'"'"']}")
     print(f"节点名称: {data['"'"'node'"'"']['"'"'name'"'"']}")
     print(f"监听端口: {data['"'"'node'"'"']['"'"'port'"'"']}")
     print(f"Reality 域名: {data['"'"'node'"'"']['"'"'domain'"'"']}")
-    print(f"服务状态: active={data['"'"'service'"'"']['"'"'active'"'"']} enabled={data['"'"'service'"'"']['"'"'enabled'"'"']} listening={data['"'"'service'"'"']['"'"'listening'"'"']}")
+    print(f"服务状态: {svc(data['"'"'service'"'"']['"'"'active'"'"'])} | 自启: {yn(bool(data['"'"'service'"'"']['"'"'enabled'"'"']))} | 监听: {listen(bool(data['"'"'service'"'"']['"'"'listening'"'"']))}")
     print(f"配置文件: {data['"'"'paths'"'"']['"'"'config'"'"']}")
     print(f"服务文件: {data['"'"'paths'"'"']['"'"'service'"'"']}")
     print(f"清单文件: {data['"'"'paths'"'"']['"'"'manifest'"'"']}")
@@ -398,11 +412,16 @@ show_reality_help() {
 
 menu_loop() {
   local suppress_logo_once="${SBOXCTL_SUPPRESS_MENU_LOGO_ONCE:-0}"
+  local first_render=1
   while true; do
+    clear_screen
     if [[ "$suppress_logo_once" == "1" ]]; then
       suppress_logo_once="0"
-    else
+    elif [[ "$first_render" == "1" ]]; then
       print_logo
+      first_render=0
+    else
+      print_compact_header
     fi
     echo "1) 部署 sing-box 节点（推荐）"
     echo "2) 部署 xray 节点"

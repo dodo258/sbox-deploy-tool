@@ -424,8 +424,10 @@ def read_service_logs(service_name: str, lines: int = 80) -> str:
         check=False,
     )
     output = (completed.stdout or completed.stderr or "").strip()
-    if not output:
-        return f"no logs found for service={service_name}"
+    if not output or output == "-- No entries --":
+        return "当前节点暂无日志"
+    if "No entries" in output:
+        return "当前节点暂无日志"
     return output
 
 
