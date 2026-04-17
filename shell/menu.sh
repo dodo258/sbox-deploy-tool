@@ -25,13 +25,76 @@ YELLOW='\033[38;5;220m'
 RED='\033[38;5;203m'
 BLUE='\033[38;5;39m'
 
+setup_colors() {
+  if [[ ! -t 1 ]] || [[ "${TERM:-}" == "dumb" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+    RESET=''
+    BOLD=''
+    DIM=''
+    CYAN=''
+    GREEN=''
+    YELLOW=''
+    RED=''
+    BLUE=''
+  fi
+}
+
+paint() {
+  local color="$1"
+  shift
+  printf "%b%s%b" "$color" "$*" "$RESET"
+}
+
+menu_item() {
+  local idx="$1"
+  local label="$2"
+  local color="${3:-$RESET}"
+  printf "  %b%s)%b %s\n" "$color" "$idx" "$RESET" "$label"
+}
+
+read_prompt() {
+  local __name="$1"
+  local __prompt="$2"
+  printf "%b%s%b" "${BOLD}${CYAN}" "$__prompt" "$RESET"
+  IFS= read -r "$__name" || return 1
+}
+
+label_line() {
+  local label="$1"
+  local value="$2"
+  printf "  %b%s%b %s\n" "${DIM}" "${label}:" "$RESET" "$value"
+}
+
+render_bbr_summary() {
+  local json="$1"
+  local enabled current qdisc has_bbr
+  enabled="$(json_value "$json" "data['bbr']['enabled']")"
+  current="$(json_value "$json" "data['bbr']['current']")"
+  qdisc="$(json_value "$json" "data['bbr']['qdisc']")"
+  has_bbr="$(json_value "$json" "data['bbr']['has_bbr']")"
+
+  if [[ "$enabled" == "true" ]]; then
+    ok "BBR 已开启"
+  else
+    warn "BBR 未开启"
+  fi
+  label_line "当前算法" "$(paint "${GREEN}" "${current}")"
+  label_line "队列算法" "$(paint "${BLUE}" "${qdisc}")"
+  if [[ "$has_bbr" == "true" ]]; then
+    label_line "系统支持 BBR" "$(paint "${GREEN}" "是")"
+  else
+    label_line "系统支持 BBR" "$(paint "${RED}" "否")"
+  fi
+}
+
+setup_colors
+
 print_logo() {
   printf "${CYAN}   _____ __                ____             ${RESET}\n"
   printf "${CYAN}  / ___// /_  ____  _  __ / __ )____  _  __${RESET}\n"
   printf "${CYAN}  \\__ \\/ __ \\/ __ \\| |/_// __  / __ \\| |/_/${RESET}\n"
   printf "${CYAN} ___/ / /_/ / /_/ />  < / /_/ / /_/ />  <  ${RESET}\n"
   printf "${CYAN}/____/_.___/\\____/_/|_|/_____/\\____/_/|_|  ${RESET}\n"
-  printf "dodo258 deploy tool | sing-box / xray | reality | media dns\n\n"
+  printf "${DIM}dodo258 deploy tool | sing-box / xray | reality | media dns${RESET}\n\n"
 }
 
 section() {
@@ -68,7 +131,7 @@ print_compact_header() {
 
 pause_screen() {
   printf "\n"
-  read -r -p "按回车继续..." _
+  read_prompt _ "按回车继续..."
 }
 
 run_backend_json() {
@@ -201,11 +264,11 @@ select_node() {
     return 1
   fi
   while IFS=$'\t' read -r idx tag name backend port service role streaming_enabled; do
-    printf "  %s) %s | 后端=%s | 端口=%s | 服务=%s\n" "$idx" "$name" "$backend" "$port" "$service"
+    printf "  %b%s)%b %s ${DIM}| 后端=%s | 端口=%s | 服务=%s${RESET}\n" "${BLUE}" "$idx" "$RESET" "$name" "$backend" "$port" "$service"
   done <<<"$lines"
-  printf "  0) 返回上一层\n"
+  menu_item 0 "返回上一层" "${DIM}"
   while true; do
-    read -r -p "请选择节点（默认 1）: " choice || return 1
+    read_prompt choice "请选择节点（默认 1）: " || return 1
     choice="${choice:-1}"
     if [[ "$choice" == "0" ]]; then
       return 2
@@ -247,7 +310,7 @@ select_streaming_node() {
     printf '%s' "$selected_single"
     return 0
   fi
-  echo "可修改的节点："
+  printf "%b可修改的节点：%b\n" "${BOLD}${BLUE}" "${RESET}"
   while IFS=$'\t' read -r idx tag name backend port service role streaming_enabled; do
     local label
     if [[ "$role" == "media" ]]; then
@@ -258,11 +321,11 @@ select_streaming_node() {
     else
       label="主节点"
     fi
-    printf "  %s) %s（%s）\n" "$idx" "$name" "$label"
+    printf "  %b%s)%b %s${DIM}（%s）${RESET}\n" "${BLUE}" "$idx" "$RESET" "$name" "$label"
   done <<<"$lines"
-  printf "  0) 返回上一层\n"
+  menu_item 0 "返回上一层" "${DIM}"
   while true; do
-    read -r -p "请选择节点（默认 ${default_choice}）: " choice || return 1
+    read_prompt choice "请选择节点（默认 ${default_choice}）: " || return 1
     choice="${choice:-$default_choice}"
     if [[ "$choice" == "0" ]]; then
       return 2
@@ -278,18 +341,18 @@ select_streaming_node() {
 }
 
 select_streaming_profile() {
-  echo "流媒体规则："
-  echo "  1) common-media（常见流媒体全选）"
-  echo "  2) netflix"
-  echo "  3) disney"
-  echo "  4) max"
-  echo "  5) primevideo"
-  echo "  6) hulu"
-  echo "  7) 自定义域名后缀"
-  echo "  0) 返回上一层"
+  printf "%b流媒体规则：%b\n" "${BOLD}${BLUE}" "${RESET}"
+  menu_item 1 "common-media（常见流媒体全选）" "${GREEN}"
+  menu_item 2 "netflix" "${BLUE}"
+  menu_item 3 "disney" "${BLUE}"
+  menu_item 4 "max" "${BLUE}"
+  menu_item 5 "primevideo" "${BLUE}"
+  menu_item 6 "hulu" "${BLUE}"
+  menu_item 7 "自定义域名后缀" "${YELLOW}"
+  menu_item 0 "返回上一层" "${DIM}"
   local choice
   while true; do
-    read -r -p "请选择规则（默认 1）: " choice || return 1
+    read_prompt choice "请选择规则（默认 1）: " || return 1
     choice="${choice:-1}"
     case "$choice" in
       1) printf 'common-media\t'; return 0 ;;
@@ -300,7 +363,7 @@ select_streaming_profile() {
       6) printf 'hulu\t'; return 0 ;;
       7)
         local custom
-        read -r -p "请输入自定义域名后缀（逗号分隔，输入 0 返回）: " custom || return 1
+        read_prompt custom "请输入自定义域名后缀（逗号分隔，输入 0 返回）: " || return 1
         [[ "$custom" == "0" ]] && return 2
         printf 'common-media\t%s' "$custom"
         return 0
@@ -318,13 +381,13 @@ deploy_flow() {
 
   section "部署 ${backend} 节点"
   info "任意子项输入 0 可返回上一层"
-  echo "节点模式："
-  echo "  1) 主节点"
-  echo "  2) 流媒体专用节点"
-  echo "  3) 主节点 + 流媒体解锁"
-  echo "  0) 返回上一层"
+  printf "%b节点模式：%b\n" "${BOLD}${BLUE}" "${RESET}"
+  menu_item 1 "主节点" "${GREEN}"
+  menu_item 2 "流媒体专用节点" "${BLUE}"
+  menu_item 3 "主节点 + 流媒体解锁" "${YELLOW}"
+  menu_item 0 "返回上一层" "${DIM}"
   while true; do
-    read -r -p "请选择模式（默认 1）: " mode || return 1
+    read_prompt mode "请选择模式（默认 1）: " || return 1
     mode="${mode:-1}"
     case "$mode" in
       1) role="main"; enable_streaming="false"; default_port="443"; break ;;
@@ -343,24 +406,24 @@ deploy_flow() {
   else
     info "自动识别地区池: ${region}"
   fi
-  read -r -p "地区标记（默认 ${region}，输入 0 返回）: " region_input || return 1
+  read_prompt region_input "地区标记（默认 ${region}，输入 0 返回）: " || return 1
   [[ "$region_input" == "0" ]] && return 0
   region="${region_input:-$region}"
 
-  read -r -p "监听端口（默认 ${default_port}，输入 0 返回）: " port || return 1
+  read_prompt port "监听端口（默认 ${default_port}，输入 0 返回）: " || return 1
   [[ "$port" == "0" ]] && return 0
   port="${port:-$default_port}"
 
   info "正在优选内置 Reality 域名，这一步通常需要 3-8 秒，请稍等"
   domains_json="$(run_backend_json backend-recommend-domains --region "$region" --limit 3 --timeout 6)" || return 1
   domains_lines="$(json_print "$domains_json" domains)"
-  echo "推荐的 Reality 域名："
+  printf "%b推荐的 Reality 域名：%b\n" "${BOLD}${BLUE}" "${RESET}"
   while IFS=$'\t' read -r idx item_domain latency; do
-    printf "  %s) %s | 延迟 %s\n" "$idx" "$item_domain" "$latency"
+    printf "  %b%s)%b %s ${DIM}| 延迟 %b%s%b${RESET}\n" "${BLUE}" "$idx" "$RESET" "$item_domain" "${YELLOW}" "$latency" "$RESET"
   done <<<"$domains_lines"
-  echo "  0) 返回上一层"
+  menu_item 0 "返回上一层" "${DIM}"
   while true; do
-    read -r -p "请选择 Reality 域名（默认 1）: " domain_choice || return 1
+    read_prompt domain_choice "请选择 Reality 域名（默认 1）: " || return 1
     domain_choice="${domain_choice:-1}"
     if [[ "$domain_choice" == "0" ]]; then
       return 0
@@ -379,7 +442,7 @@ deploy_flow() {
   else
     default_name="${region_upper}-${backend}-main"
   fi
-  read -r -p "节点名称（默认 ${default_name}，输入 0 返回）: " name || return 1
+  read_prompt name "节点名称（默认 ${default_name}，输入 0 返回）: " || return 1
   [[ "$name" == "0" ]] && return 0
   name="${name:-$default_name}"
 
@@ -387,7 +450,7 @@ deploy_flow() {
   streaming_profile="common-media"
   streaming_domains=""
   if [[ "$enable_streaming" == "true" ]]; then
-    read -r -p "流媒体 DNS 地址（输入 0 返回）: " streaming_dns || return 1
+    read_prompt streaming_dns "流媒体 DNS 地址（输入 0 返回）: " || return 1
     [[ "$streaming_dns" == "0" ]] && return 0
     if [[ -z "$streaming_dns" ]]; then
       warn "当前模式必须填写流媒体 DNS 地址"
@@ -410,21 +473,21 @@ deploy_flow() {
   fi
 
   echo ""
-  echo "部署摘要："
-  echo "  后端: ${backend}"
-  echo "  节点类型: ${role}"
-  echo "  地区标记: ${region}"
-  echo "  监听端口: ${port}"
-  echo "  Reality 域名: ${domain}"
-  echo "  节点名称: ${name}"
+  printf "%b部署摘要：%b\n" "${BOLD}${BLUE}" "${RESET}"
+  label_line "后端" "$backend"
+  label_line "节点类型" "$role"
+  label_line "地区标记" "$region"
+  label_line "监听端口" "$port"
+  label_line "Reality 域名" "$domain"
+  label_line "节点名称" "$name"
   if [[ "$enable_streaming" == "true" ]]; then
-    echo "  流媒体 DNS: ${streaming_dns}"
-    echo "  流媒体规则: ${streaming_profile}"
+    label_line "流媒体 DNS" "$streaming_dns"
+    label_line "流媒体规则" "$streaming_profile"
     if [[ -n "$streaming_domains" ]]; then
-      echo "  自定义域名后缀: ${streaming_domains}"
+      label_line "自定义域名后缀" "$streaming_domains"
     fi
   fi
-  read -r -p "确认现在部署吗？[Y/n，输入 0 返回]: " confirm || return 1
+  read_prompt confirm "确认现在部署吗？[Y/n，输入 0 返回]: " || return 1
   [[ "$confirm" == "0" ]] && return 0
   if [[ "${confirm,,}" == "n" ]]; then
     warn "已取消部署"
@@ -474,21 +537,21 @@ modify_streaming_dns_flow() {
   role="$(printf '%s' "$selected" | awk -F '\t' '{print $7}')"
   streaming_enabled="$(printf '%s' "$selected" | awk -F '\t' '{print $8}')"
   if [[ "$role" == "media" ]]; then
-    echo "当前节点：${node_name}（流媒体专用节点）"
+  printf "当前节点：%b%s%b（流媒体专用节点）\n" "${GREEN}" "${node_name}" "${RESET}"
   elif [[ "$streaming_enabled" == "True" || "$streaming_enabled" == "true" ]]; then
-    echo "当前节点：${node_name}（主节点 + 流媒体解锁）"
+    printf "当前节点：%b%s%b（主节点 + 流媒体解锁）\n" "${GREEN}" "${node_name}" "${RESET}"
   else
-    echo "当前节点：${node_name}（主节点）"
+    printf "当前节点：%b%s%b（主节点）\n" "${GREEN}" "${node_name}" "${RESET}"
   fi
-  echo "  1) 修改或启用流媒体 DNS"
-  echo "  2) 关闭流媒体 DNS"
-  echo "  0) 返回上一层"
+  menu_item 1 "修改或启用流媒体 DNS" "${GREEN}"
+  menu_item 2 "关闭流媒体 DNS" "${RED}"
+  menu_item 0 "返回上一层" "${DIM}"
   while true; do
-    read -r -p "请选择操作（默认 1）: " action || return 1
+    read_prompt action "请选择操作（默认 1）: " || return 1
     action="${action:-1}"
     case "$action" in
       1)
-        read -r -p "新的流媒体 DNS 地址（输入 0 返回）: " dns || return 1
+        read_prompt dns "新的流媒体 DNS 地址（输入 0 返回）: " || return 1
         [[ "$dns" == "0" ]] && return 0
         if [[ -z "$dns" ]]; then
           warn "流媒体 DNS 地址不能为空"
@@ -533,35 +596,35 @@ modify_streaming_dns_flow() {
 show_overview() {
   print_logo
   section "工具说明"
-  echo "服务器端一键部署工具，协议固定为 VLESS + Reality + Vision。"
-  echo "默认后端为 sing-box，也支持 xray。"
+  printf "%b服务器端一键部署工具，协议固定为 VLESS + Reality + Vision。%b\n" "${GREEN}" "${RESET}"
+  printf "%b默认后端为 sing-box，也支持 xray。%b\n" "${BLUE}" "${RESET}"
   echo ""
-  echo "服务器端启动命令："
-  echo "  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh | sudo bash"
+  printf "%b服务器端启动命令：%b\n" "${BOLD}${BLUE}" "${RESET}"
+  printf "  %bcurl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh | sudo bash%b\n" "${CYAN}" "${RESET}"
   echo ""
-  echo "常用命令："
-  echo "  sboxctl menu         # 进入交互首页"
-  echo "  sboxctl show-status  # 查看节点状态"
-  echo "  sboxctl show-links   # 查看导入地址"
-  echo "  sboxctl show-logs    # 查看节点日志"
-  echo "  sudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS>  # 修改流媒体 DNS"
-  echo "  sboxctl bbr-status   # 查看 BBR 状态"
-  echo "  sboxctl firewall --show-status # 查看 UFW 状态"
-  echo "  首页菜单 -> 更新脚本   # 从 GitHub 拉取最新版脚本"
+  printf "%b常用命令：%b\n" "${BOLD}${BLUE}" "${RESET}"
+  printf "  %bsboxctl menu%b         ${DIM}# 进入交互首页${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %bsboxctl show-status%b  ${DIM}# 查看节点状态${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %bsboxctl show-links%b   ${DIM}# 查看导入地址${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %bsboxctl show-logs%b    ${DIM}# 查看节点日志${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %bsudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS>%b  ${DIM}# 修改流媒体 DNS${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %bsboxctl bbr-status%b   ${DIM}# 查看 BBR 状态${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %bsboxctl firewall --show-status%b ${DIM}# 查看 UFW 状态${RESET}\n" "${CYAN}" "${RESET}"
+  printf "  %b首页菜单 -> 更新脚本%b   ${DIM}# 从 GitHub 拉取最新版脚本${RESET}\n" "${YELLOW}" "${RESET}"
 }
 
 show_reality_help() {
   section "Reality 域名说明"
-  echo "脚本只使用内置地址池，不开放手填自定义域名。"
-  echo "部署时会先按服务器地区挑选候选域名，再自动测速，只让你选 1 / 2 / 3。"
-  echo "当前展示的是适合内地访问习惯的商业站和大厂站点，不会把调试字段直接展示给用户。"
-  echo "如果某个地区测速整体偏慢，优先换同地区或邻近地区服务器，不建议手工乱改域名。"
+  printf "%b脚本只使用内置地址池，不开放手填自定义域名。%b\n" "${GREEN}" "${RESET}"
+  printf "%b部署时会先按服务器地区挑选候选域名，再自动测速，只让你选 1 / 2 / 3。%b\n" "${BLUE}" "${RESET}"
+  printf "%b当前展示的是适合内地访问习惯的商业站和大厂站点，不会把调试字段直接展示给用户。%b\n" "${BLUE}" "${RESET}"
+  printf "%b如果某个地区测速整体偏慢，优先换同地区或邻近地区服务器，不建议手工乱改域名。%b\n" "${YELLOW}" "${RESET}"
 }
 
 self_update_flow() {
   section "更新脚本"
   info "这一步会从 GitHub 拉取最新脚本，并覆盖当前已安装版本"
-  read -r -p "确认现在更新脚本吗？[Y/n]: " confirm || return 1
+  read_prompt confirm "确认现在更新脚本吗？[Y/n]: " || return 1
   confirm="${confirm:-y}"
   if [[ "${confirm,,}" == "n" ]]; then
     warn "已取消更新"
@@ -588,19 +651,19 @@ menu_loop() {
       clear_screen
       print_compact_header
     fi
-    echo "1) 部署 sing-box 节点（推荐）"
-    echo "2) 部署 xray 节点"
-    echo "3) 查看节点状态"
-    echo "4) 查看 VLESS 地址"
-    echo "5) 查看节点日志"
-    echo "6) 删除节点"
-    echo "7) 查看 BBR 状态"
-    echo "8) 设置 UFW 防火墙"
-    echo "9) 修改流媒体 DNS"
-    echo "10) Reality 域名说明"
-    echo "11) 更新脚本"
-    echo "0) 退出"
-    read -r -p "请选择: " choice || exit 1
+    menu_item 1 "部署 sing-box 节点（推荐）" "${GREEN}"
+    menu_item 2 "部署 xray 节点" "${BLUE}"
+    menu_item 3 "查看节点状态" "${CYAN}"
+    menu_item 4 "查看 VLESS 地址" "${CYAN}"
+    menu_item 5 "查看节点日志" "${CYAN}"
+    menu_item 6 "删除节点" "${RED}"
+    menu_item 7 "查看 BBR 状态" "${BLUE}"
+    menu_item 8 "设置 UFW 防火墙" "${BLUE}"
+    menu_item 9 "修改流媒体 DNS" "${YELLOW}"
+    menu_item 10 "Reality 域名说明" "${DIM}"
+    menu_item 11 "更新脚本" "${YELLOW}"
+    menu_item 0 "退出" "${DIM}"
+    read_prompt choice "请选择: " || exit 1
     choice="${choice:-1}"
     case "$choice" in
       1) deploy_flow "sing-box"; pause_screen ;;
@@ -669,13 +732,13 @@ menu_loop() {
         ;;
       7)
         section "BBR 状态"
-        json_print "$(run_backend_json backend-bbr-status)" bbr
+        render_bbr_summary "$(run_backend_json backend-bbr-status)"
         pause_screen
         ;;
       8)
         section "设置 UFW 防火墙"
         info "脚本会自动保留 22、当前 SSH 端口和所有已部署节点端口"
-        read -r -p "如果你还有别的服务要对外开放，请填写额外 TCP 端口（可留空，逗号分隔）: " extra_allow || exit 1
+        read_prompt extra_allow "如果你还有别的服务要对外开放，请填写额外 TCP 端口（可留空，逗号分隔）: " || exit 1
         local fw_json
         fw_json="$(run_backend_json backend-firewall --allow-ports "${extra_allow:-}" --show-status)" || {
           pause_screen
