@@ -14,6 +14,7 @@ done
 
 ROOT_DIR="$(cd "$(dirname "$SOURCE")/.." && pwd)"
 BACKEND_BIN="${ROOT_DIR}/bin/sboxctl-backend"
+SELF_UPDATE_URL="https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/bootstrap.sh"
 
 RESET='\033[0m'
 BOLD='\033[1m'
@@ -526,6 +527,7 @@ show_overview() {
   echo "  sudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS>  # 修改流媒体 DNS"
   echo "  sboxctl bbr-status   # 查看 BBR 状态"
   echo "  sboxctl firewall --show-status # 查看 UFW 状态"
+  echo "  首页菜单 -> 更新脚本   # 从 GitHub 拉取最新版脚本"
 }
 
 show_reality_help() {
@@ -534,6 +536,19 @@ show_reality_help() {
   echo "部署时会先按服务器地区挑选候选域名，再自动测速，只让你选 1 / 2 / 3。"
   echo "当前展示的是适合内地访问习惯的商业站和大厂站点，不会把调试字段直接展示给用户。"
   echo "如果某个地区测速整体偏慢，优先换同地区或邻近地区服务器，不建议手工乱改域名。"
+}
+
+self_update_flow() {
+  section "更新脚本"
+  info "这一步会从 GitHub 拉取最新脚本，并覆盖当前已安装版本"
+  read -r -p "确认现在更新脚本吗？[Y/n]: " confirm || return 1
+  confirm="${confirm:-y}"
+  if [[ "${confirm,,}" == "n" ]]; then
+    warn "已取消更新"
+    return 0
+  fi
+  info "正在从 GitHub 拉取最新脚本，这一步通常需要几秒到几十秒"
+  exec env SBOXCTL_FORCE_UPDATE=1 bash -lc "curl -fsSL ${SELF_UPDATE_URL} | bash"
 }
 
 menu_loop() {
@@ -559,6 +574,7 @@ menu_loop() {
     echo "8) 设置 UFW 防火墙"
     echo "9) 修改流媒体 DNS"
     echo "10) Reality 域名说明"
+    echo "11) 更新脚本"
     echo "0) 退出"
     read -r -p "请选择: " choice || exit 1
     choice="${choice:-1}"
@@ -653,6 +669,9 @@ menu_loop() {
       10)
         show_reality_help
         pause_screen
+        ;;
+      11)
+        self_update_flow
         ;;
       0) exit 0 ;;
       *) warn "未知选项"; pause_screen ;;
