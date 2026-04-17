@@ -137,7 +137,7 @@ elif mode == "bbr":
     print(f"系统支持 BBR: {yn(bool(b['"'"'has_bbr'"'"']))}")
 elif mode == "nodes":
     for index, node in enumerate(data["nodes"], start=1):
-        print(f"{index}\t{node['"'"'tag'"'"']}\t{node['"'"'name'"'"']}\t{node['"'"'backend'"'"']}\t{node['"'"'port'"'"']}\t{node['"'"'service'"'"']}")
+        print(f"{index}\t{node['"'"'tag'"'"']}\t{node['"'"'name'"'"']}\t{node['"'"'backend'"'"']}\t{node['"'"'port'"'"']}\t{node['"'"'service'"'"']}\t{node['"'"'role'"'"']}\t{node['"'"'streaming_enabled'"'"']}")
 elif mode == "domains":
     for index, item in enumerate(data["domains"], start=1):
         latency = f"{item['"'"'latency_ms'"'"']}ms" if item["latency_ms"] is not None else "当前网络探测失败"
@@ -199,13 +199,51 @@ select_node() {
     warn "未发现已部署节点"
     return 1
   fi
-  while IFS=$'\t' read -r idx tag name backend port service; do
+  while IFS=$'\t' read -r idx tag name backend port service role streaming_enabled; do
     printf "  %s) %s | 后端=%s | 端口=%s | 服务=%s\n" "$idx" "$name" "$backend" "$port" "$service"
   done <<<"$lines"
   printf "  0) 返回上一层\n"
   while true; do
     read -r -p "请选择节点（默认 1）: " choice || return 1
     choice="${choice:-1}"
+    if [[ "$choice" == "0" ]]; then
+      return 2
+    fi
+    local selected
+    selected="$(printf '%s\n' "$lines" | awk -F '\t' -v target="$choice" '$1==target {print $0}')"
+    if [[ -n "$selected" ]]; then
+      printf '%s' "$selected"
+      return 0
+    fi
+    warn "无效选项"
+  done
+}
+
+select_streaming_node() {
+  local nodes_json lines choice default_choice
+  nodes_json="$(run_backend_json backend-list-nodes)" || return 1
+  lines="$(json_print "$nodes_json" nodes)"
+  if [[ -z "$lines" ]]; then
+    warn "未发现已部署节点"
+    return 1
+  fi
+  default_choice="1"
+  while IFS=$'\t' read -r idx tag name backend port service role streaming_enabled; do
+    local label
+    if [[ "$role" == "media" ]]; then
+      label="流媒体专用节点"
+    elif [[ "$streaming_enabled" == "True" || "$streaming_enabled" == "true" ]]; then
+      label="主节点 + 流媒体解锁"
+      default_choice="$idx"
+    else
+      label="主节点"
+    fi
+    printf "  %s) %s（%s）\n" "$idx" "$name" "$label"
+  done <<<"$lines"
+  printf "  0) 返回上一层\n"
+  while true; do
+    read -r -p "请选择节点（默认 ${default_choice}）: " choice || return 1
+    choice="${choice:-$default_choice}"
     if [[ "$choice" == "0" ]]; then
       return 2
     fi
@@ -263,7 +301,7 @@ deploy_flow() {
   echo "节点模式："
   echo "  1) 主节点"
   echo "  2) 流媒体专用节点"
-  echo "  3) 主节点 + 流媒体 DNS"
+  echo "  3) 主节点 + 流媒体解锁"
   echo "  0) 返回上一层"
   while true; do
     read -r -p "请选择模式（默认 1）: " mode || return 1
@@ -398,10 +436,10 @@ deploy_flow() {
 modify_streaming_dns_flow() {
   section "修改流媒体 DNS"
   info "这里可以修改已部署节点的流媒体 DNS，也可以直接关闭流媒体 DNS"
-  local selected rc tag node_name action dns profile_data streaming_profile streaming_domains update_json
+  local selected rc tag node_name action dns profile_data streaming_profile streaming_domains update_json role streaming_enabled
   local -a args
   set +e
-  selected="$(select_node)"
+  selected="$(select_streaming_node)"
   rc=$?
   set -e
   if [[ $rc -eq 2 ]]; then
@@ -412,7 +450,15 @@ modify_streaming_dns_flow() {
   fi
   tag="$(printf '%s' "$selected" | awk -F '\t' '{print $2}')"
   node_name="$(printf '%s' "$selected" | awk -F '\t' '{print $3}')"
-  echo "当前节点：${node_name}"
+  role="$(printf '%s' "$selected" | awk -F '\t' '{print $7}')"
+  streaming_enabled="$(printf '%s' "$selected" | awk -F '\t' '{print $8}')"
+  if [[ "$role" == "media" ]]; then
+    echo "当前节点：${node_name}（流媒体专用节点）"
+  elif [[ "$streaming_enabled" == "True" || "$streaming_enabled" == "true" ]]; then
+    echo "当前节点：${node_name}（主节点 + 流媒体解锁）"
+  else
+    echo "当前节点：${node_name}（主节点）"
+  fi
   echo "  1) 修改或启用流媒体 DNS"
   echo "  2) 关闭流媒体 DNS"
   echo "  0) 返回上一层"
