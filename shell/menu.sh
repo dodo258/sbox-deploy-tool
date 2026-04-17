@@ -71,12 +71,22 @@ pause_screen() {
 }
 
 run_backend_json() {
-  local output
-  if ! output="$("${BACKEND_BIN}" "$@" 2>&1)"; then
-    err "$(printf '%s\n' "$output" | tail -n 1)"
+  local stdout_file stderr_file rc
+  stdout_file="$(mktemp)"
+  stderr_file="$(mktemp)"
+  if ! SBOXCTL_JSON=1 "${BACKEND_BIN}" "$@" >"${stdout_file}" 2>"${stderr_file}"; then
+    rc=$?
+    err "$(tail -n 1 "${stderr_file}" "${stdout_file}" 2>/dev/null | tail -n 1)"
+    rm -f "${stdout_file}" "${stderr_file}"
+    return "${rc}"
+  fi
+  if [[ ! -s "${stdout_file}" ]]; then
+    err "后台没有返回可用数据"
+    rm -f "${stdout_file}" "${stderr_file}"
     return 1
   fi
-  printf '%s' "$output"
+  cat "${stdout_file}"
+  rm -f "${stdout_file}" "${stderr_file}"
 }
 
 json_print() {
@@ -86,7 +96,11 @@ json_print() {
 import json, sys
 
 mode = sys.argv[1]
-data = json.load(sys.stdin)
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print("数据解析失败")
+    sys.exit(7)
 
 def yn(value):
     return "是" if value else "否"
@@ -149,7 +163,11 @@ json_value() {
   local expr="$2"
   printf '%s' "$json" | python3 -c '
 import json, sys
-data = json.load(sys.stdin)
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print("")
+    sys.exit(7)
 expr = sys.argv[1]
 value = eval(expr, {"data": data})
 if value is None:
@@ -238,7 +256,7 @@ select_streaming_profile() {
 deploy_flow() {
   local backend="$1"
   local role enable_streaming default_port mode region_json region country region_input port domains_json domains_lines domain_choice domain
-  local default_name name service_name extra_ports streaming_dns profile_data streaming_profile streaming_domains confirm deploy_json
+  local default_name name service_name extra_ports streaming_dns profile_data streaming_profile streaming_domains confirm deploy_json region_upper
 
   section "部署 ${backend} 节点"
   info "任意子项输入 0 可返回上一层"
@@ -296,10 +314,11 @@ deploy_flow() {
     warn "无效选项"
   done
 
+  region_upper="$(printf '%s' "$region" | tr '[:lower:]' '[:upper:]')"
   if [[ "$role" == "media" ]]; then
-    default_name="${region^^}-${backend}-media"
+    default_name="${region_upper}-${backend}-media"
   else
-    default_name="${region^^}-${backend}-main"
+    default_name="${region_upper}-${backend}-main"
   fi
   read -r -p "节点名称（默认 ${default_name}，输入 0 返回）: " name || return 1
   [[ "$name" == "0" ]] && return 0

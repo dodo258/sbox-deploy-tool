@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 
 
@@ -24,11 +25,19 @@ LOGO = rf"""
 """
 
 
+def _silent_json_mode() -> bool:
+    return os.environ.get("SBOXCTL_JSON") == "1"
+
+
 def print_logo() -> None:
+    if _silent_json_mode():
+        return
     print(LOGO)
 
 
 def section(title: str) -> None:
+    if _silent_json_mode():
+        return
     width = shutil.get_terminal_size((100, 20)).columns
     line = "=" * min(width, 72)
     print(f"{BOLD}{BLUE}{line}{RESET}")
@@ -37,16 +46,24 @@ def section(title: str) -> None:
 
 
 def info(message: str) -> None:
+    if _silent_json_mode():
+        return
     print(f"{CYAN}[INFO]{RESET} {message}")
 
 
 def ok(message: str) -> None:
+    if _silent_json_mode():
+        return
     print(f"{GREEN}[OK]{RESET} {message}")
 
 
 def warn(message: str) -> None:
+    if _silent_json_mode():
+        return
     print(f"{YELLOW}[WARN]{RESET} {message}")
 
 
 def err(message: str) -> None:
+    if _silent_json_mode():
+        return
     print(f"{RED}[ERR]{RESET} {message}")
