@@ -995,11 +995,9 @@ def _recommended_reality_domains(region: str, limit: int = 3, timeout: int = 4) 
         raise CommandError(f"当前地区没有内置候选域名池: {region}")
     info(f"正在并行测速内置 Reality 域名，地区池: {region}，候选数量: {len(candidates)}")
     ranked = rank_domains(candidates, timeout=timeout)
-    preferred = [item for item in ranked if item.ok]
-    usable = preferred or [item for item in ranked if item.ttfb is not None] or ranked
-    selected = usable[:limit]
+    selected = [item for item in ranked if item.ok][:limit]
     if not selected:
-        raise CommandError(f"当前地区没有可用的 Reality 候选域名: {region}")
+        raise CommandError(f"当前地区没有通过严格校验的 Reality 候选域名: {region}")
     return selected
 
 
@@ -1041,8 +1039,8 @@ def _interactive_deploy(backend: BackendType) -> int:
     domain = _prompt_reality_domain(region)
     default_name = _default_name(role, region, backend)
     name = _prompt_input(f"节点名称（默认 {default_name}，输入 0 返回）: ", allow_back=True).strip() or default_name
-    service_name = _prompt_input("systemd 服务名【可留空，输入 0 返回】: ", allow_back=True).strip() or None
-    extra_allow_ports = _prompt_input("额外放行端口【可留空，逗号分隔，输入 0 返回】: ", allow_back=True).strip() or None
+    service_name = None
+    extra_allow_ports = None
     streaming_dns = None
     streaming_profile = "common-media"
     streaming_domains = None

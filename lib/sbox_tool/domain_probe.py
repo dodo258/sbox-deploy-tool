@@ -35,6 +35,7 @@ class ProbeResult:
     domain: str
     ok: bool
     tls13: bool
+    x25519: bool
     h2: bool
     status_code: int | None
     ttfb: float | None
@@ -44,17 +45,22 @@ class ProbeResult:
     def score(self) -> float:
         score = 0.0
         if self.ok:
-            score += 50
+            score += 60
         if self.tls13:
-            score += 25
+            score += 12
+        if self.x25519:
+            score += 12
         if self.h2:
-            score += 20
-        if self.status_code == 200:
             score += 10
-        elif self.status_code and 200 <= self.status_code < 400:
-            score += 5
+        if self.status_code is not None and 200 <= self.status_code < 300:
+            score += 10
         if self.ttfb is not None:
             score += max(0, 10 - self.ttfb * 10)
+        lowered = self.domain.lower()
+        if any(hint in lowered for hint in ("apple", "github", "google", "youtube")):
+            score -= 20
+        if any(hint in lowered for hint in ("cdn", "cloudfront", "akamai", "fastly", "edgekey", "azureedge")):
+            score -= 15
         return round(score, 2)
 
 
@@ -105,17 +111,17 @@ def probe_domain(domain: str, timeout: int = 6) -> ProbeResult:
             timeout=timeout,
         )
     except FileNotFoundError:
-        return ProbeResult(domain, False, False, False, None, None, "openssl not found")
+        return ProbeResult(domain, False, False, False, False, None, None, "openssl not found")
     except subprocess.TimeoutExpired:
-        return ProbeResult(domain, False, False, False, None, None, "openssl timeout")
+        return ProbeResult(domain, False, False, False, False, None, None, "openssl timeout")
 
     tls_output = f"{tls_probe.stdout}\n{tls_probe.stderr}"
     tls13 = "TLSv1.3" in tls_output
+    x25519 = bool(re.search(r"\bX25519\b", tls_output))
     h2 = "ALPN protocol: h2" in tls_output
 
     cmd = [
         "curl",
-        "-I",
         "-sS",
         "--max-time",
         str(timeout),
@@ -129,19 +135,23 @@ def probe_domain(domain: str, timeout: int = 6) -> ProbeResult:
     try:
         completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
     except FileNotFoundError:
-        return ProbeResult(domain, False, False, False, None, None, "curl not found")
+        return ProbeResult(domain, False, tls13, x25519, h2, None, None, "curl not found")
 
     if completed.returncode != 0:
         note = completed.stderr.strip() or completed.stdout.strip() or "probe failed"
-        return ProbeResult(domain, False, tls13, h2, None, None, note)
+        return ProbeResult(domain, False, tls13, x25519, h2, None, None, note)
 
     output = completed.stdout.strip()
     fields = dict(re.findall(r"(\w+)=([^\s]+)", output))
     code = int(fields["code"]) if fields.get("code", "").isdigit() else None
     ttfb = float(fields["ttfb"]) if fields.get("ttfb") not in (None, "", "0") else 0.0
     h2 = fields.get("alpn") == "2"
-    ok = tls13 and h2 and code is not None and 200 <= code < 400
-    return ProbeResult(domain, ok, tls13, h2, code, ttfb)
+    if code is not None and 300 <= code < 400:
+        note = "redirect detected"
+    else:
+        note = ""
+    ok = tls13 and x25519 and h2 and code is not None and 200 <= code < 300
+    return ProbeResult(domain, ok, tls13, x25519, h2, code, ttfb, note)
 
 
 def rank_domains(domains: list[str], timeout: int = 6) -> list[ProbeResult]:

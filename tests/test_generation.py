@@ -181,7 +181,7 @@ To                         Action      From
     def test_candidate_pool_for_region_uses_fallback_groups(self) -> None:
         hk_pool = candidate_pool_for_region("hk")
         self.assertIn("www.hktdc.com", hk_pool)
-        self.assertIn("www.dell.com", hk_pool)
+        self.assertIn("www.oracle.com", hk_pool)
         self.assertNotIn("www.momoshop.com.tw", hk_pool)
 
     def test_country_to_probe_region_mapping(self) -> None:
@@ -194,9 +194,9 @@ To                         Action      From
     def test_recommended_reality_domains_prefers_ok_results(self, pool_mock: mock.Mock, rank_domains_mock: mock.Mock) -> None:
         pool_mock.return_value = ["a.example", "b.example", "c.example"]
         rank_domains_mock.return_value = [
-            ProbeResult("b.example", True, True, True, 200, 0.2),
-            ProbeResult("a.example", False, True, False, None, None, "failed"),
-            ProbeResult("c.example", True, True, True, 200, 0.4),
+            ProbeResult("b.example", True, True, True, True, 200, 0.2),
+            ProbeResult("a.example", False, True, False, False, None, None, "failed"),
+            ProbeResult("c.example", True, True, True, True, 200, 0.4),
         ]
         selected = _recommended_reality_domains("eu", limit=2, timeout=1)
         self.assertEqual([item.domain for item in selected], ["b.example", "c.example"])
@@ -205,9 +205,9 @@ To                         Action      From
     @mock.patch("sbox_tool.cli._recommended_reality_domains")
     def test_prompt_reality_domain_selects_by_number(self, recommended_mock: mock.Mock, _: mock.Mock) -> None:
         recommended_mock.return_value = [
-            ProbeResult("one.example", True, True, True, 200, 0.2),
-            ProbeResult("two.example", True, True, True, 200, 0.3),
-            ProbeResult("three.example", True, True, True, 200, 0.4),
+            ProbeResult("one.example", True, True, True, True, 200, 0.2),
+            ProbeResult("two.example", True, True, True, True, 200, 0.3),
+            ProbeResult("three.example", True, True, True, True, 200, 0.4),
         ]
         self.assertEqual(_prompt_reality_domain("us"), "two.example")
 

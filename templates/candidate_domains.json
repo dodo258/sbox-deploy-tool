@@ -1,49 +1,52 @@
 {
   "global": [
-    "www.dhl.com",
-    "www.ikea.com",
-    "www.dell.com",
-    "www.hp.com",
-    "www.lenovo.com",
-    "www.acer.com",
+    "academy.nvidia.com",
+    "www.oracle.com",
+    "www.java.com",
+    "www.mysql.com",
+    "www.mongodb.com",
+    "redis.io",
+    "www.cisco.com",
+    "www.swift.com",
     "www.asus.com",
-    "www.canon.com",
     "www.samsung.com",
-    "www.sony.com",
-    "www.nike.com",
-    "www.adobe.com"
+    "www.amd.com",
+    "www.canon.com",
+    "www.python.org"
   ],
   "us": [
-    "www.zoro.com",
-    "www.grainger.com",
     "www.officedepot.com",
+    "www.grainger.com",
+    "www.zoro.com",
+    "academy.nvidia.com",
+    "www.oracle.com",
     "www.oreillyauto.com",
     "www.petco.com",
     "www.autozone.com",
-    "www.lowes.com",
-    "www.target.com"
+    "www.lowes.com"
   ],
   "eu": [
-    "www.ikea.com",
-    "www.dhl.com",
     "www.decathlon.com",
+    "www.farnell.com",
     "www.zalando.com",
-    "www.booking.com",
-    "www.farnell.com"
+    "www.bauhaus.info",
+    "www.swift.com",
+    "www.umcg.nl",
+    "www.fom-international.com"
   ],
   "uk": [
     "www.argos.co.uk",
     "www.currys.co.uk",
-    "www.boots.com",
     "www.screwfix.com",
-    "www.johnlewis.com"
+    "www.johnlewis.com",
+    "www.boots.com"
   ],
   "de": [
     "www.mediamarkt.de",
     "www.saturn.de",
-    "www.otto.de",
     "www.notebooksbilliger.de",
-    "www.bauhaus.info"
+    "www.bauhaus.info",
+    "www.otto.de"
   ],
   "fr": [
     "www.fnac.com",
@@ -55,44 +58,44 @@
   "jp": [
     "www.yodobashi.com",
     "www.biccamera.com",
-    "www.rakuten.co.jp",
     "www.askul.co.jp",
     "www.muji.com",
     "www.uniqlo.com",
+    "www.u-can.co.jp",
     "www.jcb.co.jp"
   ],
   "kr": [
     "www.gmarket.co.kr",
-    "www.coupang.com",
     "www.11st.co.kr",
     "www.ssg.com",
-    "www.lotteon.com"
+    "www.lotteon.com",
+    "www.coupang.com"
   ],
   "hk": [
     "www.hktdc.com",
     "www.hongkongairport.com",
     "www.pccw.com",
-    "www.dell.com",
-    "www.lenovo.com",
-    "www.hp.com",
-    "www.ikea.com",
+    "www.asus.com",
     "www.canon.com",
-    "www.asus.com"
+    "www.samsung.com",
+    "www.cisco.com",
+    "www.oracle.com"
   ],
   "tw": [
+    "www.books.com.tw",
+    "www.etmall.com.tw",
+    "www.ruten.com.tw",
     "24h.pchome.com.tw",
     "www.momoshop.com.tw",
-    "www.ruten.com.tw",
-    "www.etmall.com.tw",
-    "www.books.com.tw"
+    "www.asus.com"
   ],
   "sg": [
     "www.fairprice.com.sg",
     "www.courts.com.sg",
-    "www.starhub.com",
     "www.singtel.com",
+    "www.starhub.com",
     "www.capitaland.com",
-    "www.dhl.com"
+    "www.oracle.com"
   ],
   "sea": [
     "www.lazada.com",
