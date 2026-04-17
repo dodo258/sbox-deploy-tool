@@ -575,13 +575,15 @@ menu_loop() {
   local suppress_logo_once="${SBOXCTL_SUPPRESS_MENU_LOGO_ONCE:-0}"
   local first_render=1
   while true; do
-    clear_screen
     if [[ "$suppress_logo_once" == "1" ]]; then
       suppress_logo_once="0"
+      first_render=0
     elif [[ "$first_render" == "1" ]]; then
+      clear_screen
       print_logo
       first_render=0
     else
+      clear_screen
       print_compact_header
     fi
     echo "1) 部署 sing-box 节点（推荐）"
