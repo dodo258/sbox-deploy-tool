@@ -19,6 +19,7 @@ from .models import BackendType
 MANIFEST_ROOT = Path("/etc/sboxctl/nodes")
 FIREWALL_ROOT = Path("/etc/sboxctl/firewall")
 FIREWALL_SERVICE_NAME = "sboxctl-firewall"
+FIREWALL_EXTRA_PORTS_FILE = FIREWALL_ROOT / "extra_ports.json"
 
 
 class CommandError(RuntimeError):
@@ -315,61 +316,57 @@ def ensure_bbr_enabled() -> dict[str, str | bool]:
     return status
 
 
-def _render_iptables_rules(ports: list[int], ipv6: bool = False) -> str:
-    protocol = "ipv6-icmp" if ipv6 else "icmp"
-    lines = [
-        "*filter",
-        ":INPUT DROP [0:0]",
-        ":FORWARD DROP [0:0]",
-        ":OUTPUT ACCEPT [0:0]",
-        "-A INPUT -i lo -j ACCEPT",
-        "-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
-        f"-A INPUT -p {protocol} -j ACCEPT",
-    ]
-    for port in sorted(set(ports)):
-        lines.append(f"-A INPUT -p tcp --dport {port} -j ACCEPT")
-    lines.append("COMMIT")
-    return "\n".join(lines) + "\n"
-
-
-def _firewall_service_content(v4_path: Path, v6_path: Path) -> str:
-    return "\n".join(
-        [
-            "[Unit]",
-            "Description=sboxctl managed firewall allowlist",
-            "DefaultDependencies=no",
-            "After=local-fs.target",
-            "Before=network-pre.target",
-            "Wants=network-pre.target",
-            "",
-            "[Service]",
-            "Type=oneshot",
-            (
-                "ExecStart=/bin/sh -c "
-                f"'/usr/sbin/iptables-restore < {v4_path} && "
-                f"if [ -x /usr/sbin/ip6tables-restore ]; then "
-                f"/usr/sbin/ip6tables-restore < {v6_path}; fi'"
-            ),
-            "RemainAfterExit=yes",
-            "",
-            "[Install]",
-            "WantedBy=multi-user.target",
-            "",
-        ]
-    )
-
-
-def enforce_firewall_tcp_allowlist(ports: list[int]) -> None:
+def save_firewall_extra_ports(ports: list[int]) -> None:
     require_root()
-    if shutil.which("iptables-restore") is None:
-        raise CommandError("iptables-restore not found")
     FIREWALL_ROOT.mkdir(parents=True, exist_ok=True)
-    v4_path = FIREWALL_ROOT / "iptables.v4"
-    v6_path = FIREWALL_ROOT / "ip6tables.v6"
-    service_path = Path("/etc/systemd/system") / f"{FIREWALL_SERVICE_NAME}.service"
-    v4_path.write_text(_render_iptables_rules(ports, ipv6=False))
-    v6_path.write_text(_render_iptables_rules(ports, ipv6=True))
-    systemd_apply(FIREWALL_SERVICE_NAME, _firewall_service_content(v4_path, v6_path), service_path)
+    FIREWALL_EXTRA_PORTS_FILE.write_text(json.dumps(sorted(set(ports)), ensure_ascii=False) + "\n")
+
+
+def load_firewall_extra_ports() -> list[int]:
+    if not FIREWALL_EXTRA_PORTS_FILE.exists():
+        return []
+    try:
+        payload = json.loads(FIREWALL_EXTRA_PORTS_FILE.read_text())
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    ports: list[int] = []
+    for item in payload:
+        try:
+            ports.append(int(item))
+        except Exception:
+            continue
+    return sorted(set(ports))
+
+
+def _parse_ufw_allowed_ports(status_output: str) -> list[int]:
+    ports: list[int] = []
+    for line in status_output.splitlines():
+        match = re.search(r"(\d+)/tcp\b", line)
+        if match:
+            ports.append(int(match.group(1)))
+    return sorted(set(ports))
+
+
+def enforce_firewall_tcp_allowlist(ports: list[int], extra_ports: list[int] | None = None) -> None:
+    require_root()
+    ensure_apt_dependencies(["ufw"])
+    FIREWALL_ROOT.mkdir(parents=True, exist_ok=True)
+    if extra_ports is not None:
+        save_firewall_extra_ports(extra_ports)
+    elif not FIREWALL_EXTRA_PORTS_FILE.exists():
+        save_firewall_extra_ports([])
+
+    if (Path("/etc/systemd/system") / f"{FIREWALL_SERVICE_NAME}.service").exists():
+        stop_and_disable_service(FIREWALL_SERVICE_NAME)
+
+    run(["ufw", "--force", "reset"])
+    run(["ufw", "default", "deny", "incoming"])
+    run(["ufw", "default", "allow", "outgoing"])
+    for port in sorted(set(ports)):
+        run(["ufw", "allow", f"{port}/tcp"])
+    run(["ufw", "--force", "enable"])
 
 
 def backup_paths(label: str, paths: list[Path], backup_root: Path) -> Path:
@@ -439,22 +436,29 @@ def port_is_listening(port: int) -> bool:
 
 
 def firewall_status() -> str:
-    active, enabled = systemd_status(FIREWALL_SERVICE_NAME)
-    ports = load_firewall_ports()
-    if active == "unavailable" and enabled == "unavailable":
-        return "firewall=unavailable"
-    return f"service={active} enabled={enabled} allow_ports={ports}"
+    if shutil.which("ufw") is None:
+        return "ufw=未安装"
+    completed = run(["ufw", "status"], check=False)
+    output = (completed.stdout or completed.stderr or "").strip()
+    ports = _parse_ufw_allowed_ports(output)
+    if not output:
+        return "ufw=状态未知"
+    first = output.splitlines()[0].strip().lower()
+    if "active" in first:
+        state = "已开启"
+    elif "inactive" in first:
+        state = "未开启"
+    else:
+        state = output.splitlines()[0].strip()
+    return f"ufw={state} | tcp放行={ports}"
 
 
-def load_firewall_ports(rules_path: Path = FIREWALL_ROOT / "iptables.v4") -> list[int]:
-    if not rules_path.exists():
+def load_firewall_ports() -> list[int]:
+    if shutil.which("ufw") is None:
         return []
-    ports: list[int] = []
-    for line in rules_path.read_text().splitlines():
-        match = re.search(r"--dport (\d+)", line)
-        if match:
-            ports.append(int(match.group(1)))
-    return sorted(set(ports))
+    completed = run(["ufw", "status"], check=False)
+    output = (completed.stdout or completed.stderr or "").strip()
+    return _parse_ufw_allowed_ports(output)
 
 
 def wait_for_service(service_name: str, port: int, timeout: int = 12) -> tuple[str, bool]:

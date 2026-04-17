@@ -25,7 +25,6 @@ from .remote_ops import (
 )
 from .system_ops import (
     CommandError,
-    FIREWALL_SERVICE_NAME,
     MANIFEST_ROOT,
     backup_paths,
     bbr_status,
@@ -45,6 +44,7 @@ from .system_ops import (
     install_backend,
     installed_backend_version,
     kernel_release,
+    load_firewall_extra_ports,
     load_node_manifests,
     parse_port_list,
     port_is_listening,
@@ -301,15 +301,16 @@ def _apply_plan_result(plan: DeployPlan, server: str, args: argparse.Namespace) 
     write_node_manifest(plan.node.tag, build_manifest(plan, server))
 
     if args.firewall:
+        extra_ports = parse_port_list(args.extra_allow_ports)
         manifests = load_node_manifests()
         allow_ports = {
             22,
             plan.node.listen_port,
             *detect_ssh_ports(),
             *collect_manifest_ports(manifests),
-            *parse_port_list(args.extra_allow_ports),
+            *extra_ports,
         }
-        enforce_firewall_tcp_allowlist(sorted(allow_ports))
+        enforce_firewall_tcp_allowlist(sorted(allow_ports), extra_ports=extra_ports)
     else:
         allow_ports = []
 
@@ -387,6 +388,32 @@ def _node_from_manifest(payload: dict) -> NodeSpec:
     )
 
 
+def _streaming_dns_from_manifest(payload: dict) -> StreamingDnsSpec | None:
+    raw = payload.get("streaming_dns")
+    if not isinstance(raw, dict):
+        return None
+    return StreamingDnsSpec(
+        provider_label=str(raw.get("provider_label") or "custom-streaming-dns"),
+        dns_server=str(raw.get("dns_server") or ""),
+        profile_name=str(raw.get("profile_name") or "common-media"),
+        match_suffixes=[str(item) for item in raw.get("match_suffixes") or []],
+    )
+
+
+def _plan_from_manifest(payload: dict) -> DeployPlan:
+    backend = str(payload.get("backend") or "sing-box")
+    if backend not in {"sing-box", "xray"}:
+        raise CommandError(f"不支持的后端: {backend}")
+    return DeployPlan(
+        backend=backend,  # type: ignore[arg-type]
+        install_root=Path(str(payload["install_root"])),
+        binary_name=str(payload.get("binary_name") or default_binary_name(backend)),  # type: ignore[arg-type]
+        service_name=str(payload.get("service_name") or ""),
+        node=_node_from_manifest(payload),
+        streaming_dns=_streaming_dns_from_manifest(payload),
+    )
+
+
 def _node_summary(payload: dict) -> dict:
     node = payload["node"]
     return {
@@ -397,6 +424,7 @@ def _node_summary(payload: dict) -> dict:
         "port": int(node["listen_port"]),
         "role": node["role"],
         "server": payload.get("server", ""),
+        "streaming_enabled": bool(payload.get("streaming_dns")),
     }
 
 
@@ -487,16 +515,18 @@ def _show_status_result() -> dict:
 
 def _firewall_result(allow_ports_raw: str, show_status: bool) -> dict:
     manifests = load_node_manifests()
+    extra_ports = parse_port_list(allow_ports_raw)
     allow_ports = {
         22,
         *detect_ssh_ports(),
         *collect_manifest_ports(manifests),
-        *parse_port_list(allow_ports_raw),
+        *extra_ports,
     }
-    enforce_firewall_tcp_allowlist(sorted(allow_ports))
+    enforce_firewall_tcp_allowlist(sorted(allow_ports), extra_ports=extra_ports)
     return {
         "ok": True,
         "allow_ports": sorted(allow_ports),
+        "extra_ports": extra_ports,
         "status": firewall_status() if show_status else "",
     }
 
@@ -526,12 +556,14 @@ def _remove_node_result(tag: str) -> dict:
         service_path.unlink()
     remove_node_manifest(str(node["tag"]))
     remaining = load_node_manifests()
+    extra_ports = load_firewall_extra_ports()
     allow_ports = {
         22,
         *detect_ssh_ports(),
         *collect_manifest_ports(remaining),
+        *extra_ports,
     }
-    enforce_firewall_tcp_allowlist(sorted(allow_ports))
+    enforce_firewall_tcp_allowlist(sorted(allow_ports), extra_ports=extra_ports)
     return {
         "ok": True,
         "removed": {
@@ -542,6 +574,61 @@ def _remove_node_result(tag: str) -> dict:
             "service_path": str(service_path),
         },
         "allow_ports": sorted(allow_ports),
+    }
+
+
+def _update_streaming_dns_result(
+    tag: str,
+    dns_server: str | None,
+    profile_name: str,
+    streaming_domains: str | None,
+    disable: bool,
+) -> dict:
+    payload = next((item for item in load_node_manifests() if item.get("node", {}).get("tag") == tag), None)
+    if not payload:
+        raise CommandError(f"未找到节点: {tag}")
+    plan = _plan_from_manifest(payload)
+    if not plan.service_name:
+        raise CommandError("当前节点缺少可用的服务名")
+    if disable:
+        plan.streaming_dns = None
+    else:
+        provider_label = "custom-streaming-dns"
+        if isinstance(payload.get("streaming_dns"), dict):
+            provider_label = str(payload["streaming_dns"].get("provider_label") or provider_label)
+        plan.streaming_dns = _build_streaming_dns(
+            plan.backend,
+            True,
+            dns_server,
+            profile_name,
+            streaming_domains,
+            provider_label,
+        )
+    final_config = _config_path_from_manifest(payload)
+    final_service = _service_path_from_manifest(payload)
+    manifest_path = MANIFEST_ROOT / f"{plan.node.tag}.json"
+    backup = backup_paths(plan.node.tag, [final_config, final_service, manifest_path], BACKUP_ROOT)
+    write_json(final_config, build_config(plan))
+    systemd_apply(
+        plan.service_name,
+        build_service(plan.service_name, plan.binary_name, str(final_config), plan.backend),
+        final_service,
+    )
+    server = payload.get("server") or _resolve_server_address(None)
+    write_node_manifest(plan.node.tag, build_manifest(plan, server))
+    active, listening = wait_for_service(plan.service_name, plan.node.listen_port)
+    _, enabled = systemd_status(plan.service_name)
+    return {
+        "ok": True,
+        "backup": str(backup),
+        "node": {"name": plan.node.name, "tag": plan.node.tag},
+        "service": {
+            "name": plan.service_name,
+            "active": active,
+            "enabled": enabled,
+            "listening": listening,
+        },
+        "streaming_dns": build_manifest(plan, server)["streaming_dns"],
     }
 
 
@@ -601,7 +688,7 @@ def cmd_firewall(args: argparse.Namespace) -> int:
     section("防火墙")
     require_root()
     result = _firewall_result(args.allow_ports, args.show_status)
-    ok(f"当前防火墙放行端口: {result['allow_ports']}")
+    ok(f"当前 UFW 放行端口: {result['allow_ports']}")
     if result["status"]:
         print(result["status"])
     return 0
@@ -656,6 +743,7 @@ def cmd_remove_node(args: argparse.Namespace) -> int:
     payload = _select_manifest(manifests, "请选择要删除的节点（默认 1）: ")
     node = payload["node"]
     service_name = str(payload.get("service_name") or "").strip()
+    config_path = _config_path_from_manifest(payload)
     manifest_path = MANIFEST_ROOT / f"{node['tag']}.json"
     print("即将删除：")
     print(f"  节点名称: {node['name']}")
@@ -671,7 +759,7 @@ def cmd_remove_node(args: argparse.Namespace) -> int:
         ok(f"服务已移除: {service_name}")
     ok(f"配置已移除: {result['removed']['config']}")
     ok(f"服务文件已移除: {result['removed']['service_path']}")
-    ok(f"当前防火墙放行端口: {result['allow_ports']}")
+    ok(f"当前 UFW 放行端口: {result['allow_ports']}")
     return 0
 
 
@@ -699,9 +787,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     except Exception:
         print("主 IPv4: 无法自动检测")
     print(f"SSH 端口: {detect_ssh_ports()}")
-    print(f"防火墙状态: {firewall_status()}")
-    active, enabled = systemd_status(FIREWALL_SERVICE_NAME)
-    print(f"{FIREWALL_SERVICE_NAME}: 运行中={active} 开机自启={enabled}")
+    print(f"UFW 状态: {firewall_status()}")
     _print_bbr_summary(bbr_status())
     manifests = load_node_manifests()
     service_names = [part.strip() for part in args.services.split(",") if part.strip()] or collect_manifest_services(manifests)
@@ -711,6 +797,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"{service}: 运行中={active} 开机自启={enabled}")
     for port in ports:
         print(f"端口 {port}: 监听中={port_is_listening(port)}")
+    return 0
+
+
+def cmd_update_streaming_dns(args: argparse.Namespace) -> int:
+    section("修改流媒体 DNS")
+    require_root()
+    result = _update_streaming_dns_result(
+        args.tag,
+        args.streaming_dns,
+        args.streaming_profile,
+        args.streaming_domains,
+        args.disable,
+    )
+    ok("流媒体 DNS 已更新")
+    print(f"节点名称: {result['node']['name']}")
+    if result["streaming_dns"]:
+        print(f"DNS 地址: {result['streaming_dns']['dns_server']}")
+        print(f"规则: {result['streaming_dns']['profile_name']}")
+    else:
+        print("当前节点已关闭流媒体 DNS")
     return 0
 
 
@@ -810,6 +916,18 @@ def cmd_backend_firewall(args: argparse.Namespace) -> int:
 def cmd_backend_remove_node(args: argparse.Namespace) -> int:
     require_root()
     result = _remove_node_result(args.tag)
+    return _json_dump(result)
+
+
+def cmd_backend_update_streaming_dns(args: argparse.Namespace) -> int:
+    require_root()
+    result = _update_streaming_dns_result(
+        args.tag,
+        args.streaming_dns,
+        args.streaming_profile,
+        args.streaming_domains,
+        args.disable,
+    )
     return _json_dump(result)
 
 
@@ -1240,12 +1358,20 @@ def build_parser() -> argparse.ArgumentParser:
     remove_node = sub.add_parser("remove-node", help="remove one deployed node and refresh firewall")
     remove_node.set_defaults(func=cmd_remove_node)
 
+    update_streaming = sub.add_parser("update-streaming-dns", help="update streaming dns for a deployed node")
+    update_streaming.add_argument("--tag", required=True)
+    update_streaming.add_argument("--streaming-dns")
+    update_streaming.add_argument("--streaming-profile", choices=sorted(STREAMING_PROFILES), default="common-media")
+    update_streaming.add_argument("--streaming-domains")
+    update_streaming.add_argument("--disable", action="store_true")
+    update_streaming.set_defaults(func=cmd_update_streaming_dns)
+
     doctor = sub.add_parser("doctor", help="inspect system and deployed nodes")
     doctor.add_argument("--services", default="")
     doctor.add_argument("--ports", default="")
     doctor.set_defaults(func=cmd_doctor)
 
-    firewall = sub.add_parser("firewall", help="enforce tcp allowlist with built-in firewall service")
+    firewall = sub.add_parser("firewall", help="apply ufw allowlist for ssh and node ports")
     firewall.add_argument("--allow-ports", default="")
     firewall.add_argument("--show-status", action="store_true")
     firewall.set_defaults(func=cmd_firewall)
@@ -1302,6 +1428,14 @@ def build_parser() -> argparse.ArgumentParser:
     backend_remove = sub.add_parser("backend-remove-node", help=argparse.SUPPRESS)
     backend_remove.add_argument("--tag", required=True)
     backend_remove.set_defaults(func=cmd_backend_remove_node)
+
+    backend_update_streaming = sub.add_parser("backend-update-streaming-dns", help=argparse.SUPPRESS)
+    backend_update_streaming.add_argument("--tag", required=True)
+    backend_update_streaming.add_argument("--streaming-dns")
+    backend_update_streaming.add_argument("--streaming-profile", choices=sorted(STREAMING_PROFILES), default="common-media")
+    backend_update_streaming.add_argument("--streaming-domains")
+    backend_update_streaming.add_argument("--disable", action="store_true")
+    backend_update_streaming.set_defaults(func=cmd_backend_update_streaming_dns)
 
     backend_deploy = sub.add_parser("backend-deploy-local", help=argparse.SUPPRESS)
     backend_deploy.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")

@@ -30,7 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 - 查看节点日志
 - 删除节点
 - 查看 `BBR` 状态
-- 调整防火墙
+- 设置 `UFW` 防火墙
+- 修改流媒体 DNS
 - 查看 `Reality` 域名说明
 
 ## 二、部署时会让你选择什么
@@ -98,9 +99,9 @@ sboxctl bbr-status
 sudo sboxctl enable-bbr
 ```
 
-## 五、防火墙
+## 五、UFW 防火墙
 
-脚本默认会自动写入并启用脚本自带的防火墙服务，并按收口模式执行：
+脚本默认会自动安装并启用 `ufw`，并按收口模式执行：
 
 - 保留 `22/tcp`
 - 保留当前 SSH 端口
@@ -108,7 +109,7 @@ sudo sboxctl enable-bbr
 - 保留历史已部署节点端口
 - 关闭其余未放行端口
 
-防火墙规则会持久化到系统里，重启后仍然有效。
+`ufw` 规则会持久化到系统里，重启后仍然有效。
 
 手动执行：
 
@@ -116,7 +117,23 @@ sudo sboxctl enable-bbr
 sudo sboxctl firewall --show-status
 ```
 
-## 六、常用命令
+## 六、修改流媒体 DNS
+
+如果你已经部署了流媒体专用节点，或者主节点启用了流媒体 DNS，后面不需要重部署。
+
+可以直接在菜单里进入“修改流媒体 DNS”，也可以手动执行：
+
+```bash
+sudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS>
+```
+
+如果要关闭某个节点的流媒体 DNS：
+
+```bash
+sudo sboxctl update-streaming-dns --tag <节点标记> --disable
+```
+
+## 七、常用命令
 
 查看入口说明：
 
@@ -148,6 +165,12 @@ sboxctl show-links
 sboxctl show-logs
 ```
 
+修改某个节点的流媒体 DNS：
+
+```bash
+sudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS>
+```
+
 删除某个已部署节点：
 
 ```bash
@@ -160,7 +183,7 @@ sudo sboxctl remove-node
 sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LABEL> --backend sing-box
 ```
 
-## 七、Reality 域名选择
+## 八、Reality 域名选择
 
 部署流程会根据服务器地区自动匹配内置候选池，并直接给出推荐域名编号，让用户只选 `1 / 2 / 3`。
 

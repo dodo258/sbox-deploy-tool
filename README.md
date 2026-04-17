@@ -6,8 +6,9 @@
 - 默认优先 `sing-box`
 - 自动安装基础依赖
 - 自动检查并启用 `BBR`
-- 自动写入并收口脚本自带防火墙
+- 自动安装并收口 `ufw` 防火墙
 - 支持主节点、流媒体专用节点、主节点附加流媒体 DNS
+- 支持后期单独修改流媒体 DNS，无需重部署
 
 ## 一键启动
 
@@ -54,9 +55,9 @@ sboxctl menu
 - 脚本不会全局改系统 DNS
 - 只会把选中的流媒体域名后缀交给流媒体 DNS 解析
 
-## 防火墙
+## UFW 防火墙
 
-脚本默认自动处理防火墙，并按收口模式执行：
+脚本默认自动处理 `ufw`，并按收口模式执行：
 
 - 永远保留 `22/tcp`
 - 永远保留当前服务器检测到的 SSH 端口
@@ -72,9 +73,10 @@ sudo sboxctl menu                   # 打开交互菜单
 sboxctl show-status                 # 查看已部署节点和服务状态
 sboxctl show-links                  # 查看当前节点的 VLESS 导入地址
 sboxctl show-logs                   # 查看节点最近日志
+sudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS> # 修改流媒体 DNS
 sudo sboxctl remove-node            # 删除已部署节点
 sboxctl bbr-status                  # 查看 BBR 当前状态
-sudo sboxctl firewall --show-status # 查看当前防火墙状态
+sudo sboxctl firewall --show-status # 查看当前 UFW 状态
 ```
 
 ## 说明

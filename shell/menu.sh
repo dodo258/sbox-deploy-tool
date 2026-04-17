@@ -151,7 +151,7 @@ elif mode == "deploy":
     print(f"配置文件: {data['"'"'paths'"'"']['"'"'config'"'"']}")
     print(f"服务文件: {data['"'"'paths'"'"']['"'"'service'"'"']}")
     print(f"清单文件: {data['"'"'paths'"'"']['"'"'manifest'"'"']}")
-    print(f"防火墙放行端口: {data['"'"'firewall_ports'"'"']}")
+    print(f"UFW 放行端口: {data['firewall_ports']}")
     print("")
     print("VLESS 地址:")
     print(data["exports"]["shadowrocket_vless"])
@@ -256,7 +256,7 @@ select_streaming_profile() {
 deploy_flow() {
   local backend="$1"
   local role enable_streaming default_port mode region_json region country region_input port domains_json domains_lines domain_choice domain
-  local default_name name service_name extra_ports streaming_dns profile_data streaming_profile streaming_domains confirm deploy_json region_upper
+  local default_name name streaming_dns profile_data streaming_profile streaming_domains confirm deploy_json region_upper
 
   section "部署 ${backend} 节点"
   info "任意子项输入 0 可返回上一层"
@@ -324,12 +324,6 @@ deploy_flow() {
   [[ "$name" == "0" ]] && return 0
   name="${name:-$default_name}"
 
-  read -r -p "systemd 服务名（可留空，输入 0 返回）: " service_name || return 1
-  [[ "$service_name" == "0" ]] && return 0
-
-  read -r -p "额外放行端口（可留空，逗号分隔，输入 0 返回）: " extra_ports || return 1
-  [[ "$extra_ports" == "0" ]] && return 0
-
   streaming_dns=""
   streaming_profile="common-media"
   streaming_domains=""
@@ -391,8 +385,6 @@ deploy_flow() {
     --backend-version latest
     --firewall
   )
-  [[ -n "$service_name" ]] && args+=(--service-name "$service_name")
-  [[ -n "$extra_ports" ]] && args+=(--extra-allow-ports "$extra_ports")
   if [[ "$enable_streaming" == "true" ]]; then
     args+=(--enable-streaming-dns --streaming-dns "$streaming_dns" --streaming-profile "$streaming_profile")
     [[ -n "$streaming_domains" ]] && args+=(--streaming-domains "$streaming_domains")
@@ -401,6 +393,74 @@ deploy_flow() {
   ok "部署完成"
   json_print "$deploy_json" deploy
   return 0
+}
+
+modify_streaming_dns_flow() {
+  section "修改流媒体 DNS"
+  info "这里可以修改已部署节点的流媒体 DNS，也可以直接关闭流媒体 DNS"
+  local selected rc tag node_name action dns profile_data streaming_profile streaming_domains update_json
+  local -a args
+  set +e
+  selected="$(select_node)"
+  rc=$?
+  set -e
+  if [[ $rc -eq 2 ]]; then
+    return 0
+  fi
+  if [[ $rc -ne 0 ]]; then
+    return 1
+  fi
+  tag="$(printf '%s' "$selected" | awk -F '\t' '{print $2}')"
+  node_name="$(printf '%s' "$selected" | awk -F '\t' '{print $3}')"
+  echo "当前节点：${node_name}"
+  echo "  1) 修改或启用流媒体 DNS"
+  echo "  2) 关闭流媒体 DNS"
+  echo "  0) 返回上一层"
+  while true; do
+    read -r -p "请选择操作（默认 1）: " action || return 1
+    action="${action:-1}"
+    case "$action" in
+      1)
+        read -r -p "新的流媒体 DNS 地址（输入 0 返回）: " dns || return 1
+        [[ "$dns" == "0" ]] && return 0
+        if [[ -z "$dns" ]]; then
+          warn "流媒体 DNS 地址不能为空"
+          continue
+        fi
+        set +e
+        profile_data="$(select_streaming_profile)"
+        rc=$?
+        set -e
+        if [[ $rc -eq 2 ]]; then
+          return 0
+        fi
+        if [[ $rc -ne 0 ]]; then
+          return 1
+        fi
+        streaming_profile="${profile_data%%$'\t'*}"
+        streaming_domains="${profile_data#*$'\t'}"
+        if [[ "$streaming_domains" == "$profile_data" ]]; then
+          streaming_domains=""
+        fi
+        args=(backend-update-streaming-dns --tag "$tag" --streaming-dns "$dns" --streaming-profile "$streaming_profile")
+        [[ -n "$streaming_domains" ]] && args+=(--streaming-domains "$streaming_domains")
+        update_json="$(run_backend_json "${args[@]}")" || return 1
+        ok "流媒体 DNS 已更新"
+        printf '节点: %s\n' "$(json_value "$update_json" "data['node']['name']")"
+        printf 'DNS: %s\n' "$(json_value "$update_json" "data['streaming_dns']['dns_server']")"
+        printf '规则: %s\n' "$(json_value "$update_json" "data['streaming_dns']['profile_name']")"
+        return 0
+        ;;
+      2)
+        update_json="$(run_backend_json backend-update-streaming-dns --tag "$tag" --disable)" || return 1
+        ok "流媒体 DNS 已关闭"
+        printf '节点: %s\n' "$(json_value "$update_json" "data['node']['name']")"
+        return 0
+        ;;
+      0) return 0 ;;
+      *) warn "无效选项" ;;
+    esac
+  done
 }
 
 show_overview() {
@@ -417,8 +477,9 @@ show_overview() {
   echo "  sboxctl show-status  # 查看节点状态"
   echo "  sboxctl show-links   # 查看导入地址"
   echo "  sboxctl show-logs    # 查看节点日志"
+  echo "  sudo sboxctl update-streaming-dns --tag <节点标记> --streaming-dns <DNS>  # 修改流媒体 DNS"
   echo "  sboxctl bbr-status   # 查看 BBR 状态"
-  echo "  sboxctl firewall --show-status # 查看防火墙状态"
+  echo "  sboxctl firewall --show-status # 查看 UFW 状态"
 }
 
 show_reality_help() {
@@ -449,8 +510,9 @@ menu_loop() {
     echo "5) 查看节点日志"
     echo "6) 删除节点"
     echo "7) 查看 BBR 状态"
-    echo "8) 调整防火墙"
-    echo "9) Reality 域名说明"
+    echo "8) 设置 UFW 防火墙"
+    echo "9) 修改流媒体 DNS"
+    echo "10) Reality 域名说明"
     echo "0) 退出"
     read -r -p "请选择: " choice || exit 1
     choice="${choice:-1}"
@@ -513,7 +575,7 @@ menu_loop() {
           }
           ok "节点已删除"
           printf '节点: %s\n' "$(json_value "$remove_json" "data['removed']['name']")"
-          printf '防火墙放行端口: %s\n' "$(json_value "$remove_json" "data['allow_ports']")"
+          printf 'UFW 放行端口: %s\n' "$(json_value "$remove_json" "data['allow_ports']")"
         else
           warn "已取消删除"
         fi
@@ -525,19 +587,24 @@ menu_loop() {
         pause_screen
         ;;
       8)
-        section "调整防火墙"
-        read -r -p "额外放行端口（可留空，逗号分隔）: " extra_allow || exit 1
+        section "设置 UFW 防火墙"
+        info "脚本会自动保留 22、当前 SSH 端口和所有已部署节点端口"
+        read -r -p "如果你还有别的服务要对外开放，请填写额外 TCP 端口（可留空，逗号分隔）: " extra_allow || exit 1
         local fw_json
         fw_json="$(run_backend_json backend-firewall --allow-ports "${extra_allow:-}" --show-status)" || {
           pause_screen
           continue
         }
-        ok "防火墙已刷新"
-        printf '当前放行端口: %s\n' "$(json_value "$fw_json" "data['allow_ports']")"
+        ok "UFW 规则已刷新"
+        printf '当前 TCP 放行端口: %s\n' "$(json_value "$fw_json" "data['allow_ports']")"
         printf '%s\n' "$(json_value "$fw_json" "data['status']")"
         pause_screen
         ;;
       9)
+        modify_streaming_dns_flow
+        pause_screen
+        ;;
+      10)
         show_reality_help
         pause_screen
         ;;
