@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .config_gen import build_config, build_manifest, build_service, write_json
 from .crypto import generate_reality_keys
-from .domain_probe import ProbeResult, available_regions, candidate_pool_for_region, load_candidates, parse_domain_list, rank_domains
+from .domain_probe import ProbeResult, candidate_pool_for_region, rank_domains
 from .exports import export_mihomo_proxy, export_vless_url
 from .geo import lookup_ip_metadata
 from .models import BackendType, DeployPlan, NodeSpec, RealityKeys, StreamingDnsSpec
@@ -72,6 +72,11 @@ _TTY_HANDLE = None
 
 class BackToMenu(CommandError):
     pass
+
+
+def _json_dump(payload: dict) -> int:
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
 
 
 def _prompt_input(prompt: str, allow_back: bool = False) -> str:
@@ -267,7 +272,7 @@ def _write_bundle(plan: DeployPlan, server: str) -> Path:
     return bundle_dir
 
 
-def _apply_plan(plan: DeployPlan, server: str, args: argparse.Namespace) -> int:
+def _apply_plan_result(plan: DeployPlan, server: str, args: argparse.Namespace) -> dict:
     bundle_dir = _write_bundle(plan, server)
     install_root = plan.install_root
     install_root.mkdir(parents=True, exist_ok=True)
@@ -286,7 +291,6 @@ def _apply_plan(plan: DeployPlan, server: str, args: argparse.Namespace) -> int:
         [final_config, final_service, final_manifest],
         Path(args.backup_root),
     )
-    info(f"backup: {backup}")
 
     try:
         config_payload = build_config(plan)
@@ -306,17 +310,57 @@ def _apply_plan(plan: DeployPlan, server: str, args: argparse.Namespace) -> int:
             *parse_port_list(args.extra_allow_ports),
         }
         enforce_firewall_tcp_allowlist(sorted(allow_ports))
-        ok(f"firewall active allowlist: {sorted(allow_ports)}")
+    else:
+        allow_ports = []
 
     active, listening = wait_for_service(plan.service_name, plan.node.listen_port)
     _, enabled = systemd_status(plan.service_name)
     exports = json.loads((bundle_dir / "exports.json").read_text())
-    info(f"backend={plan.backend} version={installed_backend_version(plan.backend) or 'unknown'}")
-    info(f"service active={active} enabled={enabled} listening={listening}")
-    info(f"config path: {final_config}")
-    info(f"service path: {final_service}")
-    info(f"manifest path: {final_manifest}")
-    info(f"vless: {exports['shadowrocket_vless']}")
+    return {
+        "ok": True,
+        "message": "部署完成",
+        "backend": plan.backend,
+        "version": installed_backend_version(plan.backend) or "unknown",
+        "service": {
+            "name": plan.service_name,
+            "active": active,
+            "enabled": enabled,
+            "listening": listening,
+        },
+        "node": {
+            "name": plan.node.name,
+            "tag": plan.node.tag,
+            "role": plan.node.role,
+            "port": plan.node.listen_port,
+            "domain": plan.node.server_name,
+        },
+        "paths": {
+            "backup": str(backup),
+            "config": str(final_config),
+            "service": str(final_service),
+            "manifest": str(final_manifest),
+            "bundle_dir": str(bundle_dir),
+        },
+        "exports": exports,
+        "firewall_ports": sorted(allow_ports),
+    }
+
+
+def _apply_plan(plan: DeployPlan, server: str, args: argparse.Namespace) -> int:
+    result = _apply_plan_result(plan, server, args)
+    info(f"backup: {result['paths']['backup']}")
+    if result["firewall_ports"]:
+        ok(f"firewall active allowlist: {result['firewall_ports']}")
+    info(f"backend={result['backend']} version={result['version']}")
+    info(
+        "service active="
+        f"{result['service']['active']} enabled={result['service']['enabled']} "
+        f"listening={result['service']['listening']}"
+    )
+    info(f"config path: {result['paths']['config']}")
+    info(f"service path: {result['paths']['service']}")
+    info(f"manifest path: {result['paths']['manifest']}")
+    info(f"vless: {result['exports']['shadowrocket_vless']}")
     return 0
 
 
@@ -341,6 +385,19 @@ def _node_from_manifest(payload: dict) -> NodeSpec:
         packet_encoding=node.get("packet_encoding", "xudp"),
         flow=node.get("flow", "xtls-rprx-vision"),
     )
+
+
+def _node_summary(payload: dict) -> dict:
+    node = payload["node"]
+    return {
+        "name": node["name"],
+        "tag": node["tag"],
+        "backend": payload.get("backend", "unknown"),
+        "service": payload.get("service_name", ""),
+        "port": int(node["listen_port"]),
+        "role": node["role"],
+        "server": payload.get("server", ""),
+    }
 
 
 def _config_path_from_manifest(payload: dict) -> Path:
@@ -382,78 +439,110 @@ def _print_bbr_summary(status: dict[str, str | bool]) -> None:
     print(f"fq 就绪: {status['fq_ready']}")
 
 
-def _print_probe_help() -> None:
-    section("Reality 域名选择说明")
-    detected = None
-    try:
-        server_ip = detect_primary_ipv4()
-        detected = lookup_ip_metadata(server_ip)
-    except Exception:
-        detected = None
-    if detected:
-        country = detected["country"] or detected["country_code"] or "unknown"
-        print(f"检测到的服务器 IP: {detected['server_ip']}")
-        print(f"自动匹配地区池: {detected['probe_region']} ({country})")
-        print("")
-    print("macOS / Linux：")
-    if detected:
-        print(
-            "  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | "
-            f"bash -s -- --server-ip {detected['server_ip']}"
-        )
-    print("  curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.sh | bash -s -- --list-regions")
-    print("")
-    print("Windows PowerShell：")
-    if detected:
-        print(
-            "  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | "
-            f"iex -ServerIp {detected['server_ip']}"
-        )
-    print("  irm https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/scripts/probe-reality.ps1 | iex -ListRegions")
-    print("")
-    print("优选结果只使用脚本内置地区池，不对小白开放自定义域名输入。")
-    print("先在本地电脑优选，再把域名填回服务器端向导。")
+def _bbr_status_result() -> dict:
+    status = bbr_status()
+    return {
+        "kernel": kernel_release(),
+        "bbr": status,
+    }
 
 
-def cmd_probe(args: argparse.Namespace) -> int:
-    section("Reality 域名探测")
-    pools = load_candidates()
-    if args.list_regions:
-        print("可用地区池：")
-        for region in available_regions():
-            print(f"  - {region}")
-        return 0
-    if args.server_ip:
-        detected = lookup_ip_metadata(args.server_ip)
-        print(
-            f"server_ip={detected['server_ip']} country={detected['country'] or detected['country_code'] or 'unknown'} "
-            f"probe_region={detected['probe_region']}"
+def _show_links_result() -> dict:
+    manifests = load_node_manifests()
+    links = []
+    for payload in manifests:
+        node = _node_from_manifest(payload)
+        server = payload.get("server") or _resolve_server_address(None)
+        links.append(
+            {
+                "backend": payload.get("backend", "unknown"),
+                "name": node.name,
+                "tag": node.tag,
+                "url": export_vless_url(server, node),
+            }
         )
-        domains = pools.get(detected["probe_region"], [])
-    elif args.domains:
-        domains = parse_domain_list(args.domains)
-    else:
-        region = _normalize_region(args.region or "")
-        domains = pools.get(region, [])
-        if not domains:
-            print(f"地区 {region} 没有可用候选域名")
-            print(f"可用地区池: {', '.join(available_regions())}")
-            return 1
-    if not domains:
-        print("没有可供测试的域名")
-        return 1
-    results = rank_domains(domains, timeout=args.timeout)
-    for item in results[: args.limit]:
-        status = item.status_code if item.status_code is not None else "-"
-        ttfb = f"{item.ttfb:.3f}" if item.ttfb is not None else "-"
-        line = (
-            f"{item.domain:28} score={item.score:6} tls13={item.tls13!s:5} "
-            f"h2={item.h2!s:5} code={status:>3} ttfb={ttfb}"
+    return {"nodes": links}
+
+
+def _show_status_result() -> dict:
+    manifests = load_node_manifests()
+    nodes = []
+    for payload in manifests:
+        summary = _node_summary(payload)
+        active, enabled = systemd_status(summary["service"])
+        listening = port_is_listening(summary["port"])
+        summary.update(
+            {
+                "active": active,
+                "enabled": enabled,
+                "listening": listening,
+            }
         )
-        if item.note:
-            line += f" note={item.note}"
-        print(line)
-    return 0
+        nodes.append(summary)
+    return {
+        "bbr": _bbr_status_result(),
+        "nodes": nodes,
+    }
+
+
+def _firewall_result(allow_ports_raw: str, show_status: bool) -> dict:
+    manifests = load_node_manifests()
+    allow_ports = {
+        22,
+        *detect_ssh_ports(),
+        *collect_manifest_ports(manifests),
+        *parse_port_list(allow_ports_raw),
+    }
+    enforce_firewall_tcp_allowlist(sorted(allow_ports))
+    return {
+        "ok": True,
+        "allow_ports": sorted(allow_ports),
+        "status": firewall_status() if show_status else "",
+    }
+
+
+def _show_logs_result(service_name: str, lines: int) -> dict:
+    return {
+        "service": service_name,
+        "lines": lines,
+        "logs": read_service_logs(service_name, lines),
+    }
+
+
+def _remove_node_result(tag: str) -> dict:
+    manifests = load_node_manifests()
+    payload = next((item for item in manifests if item.get("node", {}).get("tag") == tag), None)
+    if not payload:
+        raise CommandError(f"未找到节点: {tag}")
+    node = payload["node"]
+    service_name = str(payload.get("service_name") or "").strip()
+    config_path = _config_path_from_manifest(payload)
+    service_path = _service_path_from_manifest(payload)
+    if service_name:
+        stop_and_disable_service(service_name)
+    if config_path.exists():
+        config_path.unlink()
+    if service_path.exists():
+        service_path.unlink()
+    remove_node_manifest(str(node["tag"]))
+    remaining = load_node_manifests()
+    allow_ports = {
+        22,
+        *detect_ssh_ports(),
+        *collect_manifest_ports(remaining),
+    }
+    enforce_firewall_tcp_allowlist(sorted(allow_ports))
+    return {
+        "ok": True,
+        "removed": {
+            "name": node["name"],
+            "tag": node["tag"],
+            "service": service_name,
+            "config": str(config_path),
+            "service_path": str(service_path),
+        },
+        "allow_ports": sorted(allow_ports),
+    }
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -511,24 +600,18 @@ def cmd_import_xray(args: argparse.Namespace) -> int:
 def cmd_firewall(args: argparse.Namespace) -> int:
     section("防火墙")
     require_root()
-    manifests = load_node_manifests()
-    allow_ports = {
-        22,
-        *detect_ssh_ports(),
-        *collect_manifest_ports(manifests),
-        *parse_port_list(args.allow_ports),
-    }
-    enforce_firewall_tcp_allowlist(sorted(allow_ports))
-    ok(f"当前防火墙放行端口: {sorted(allow_ports)}")
-    if args.show_status:
-        print(firewall_status())
+    result = _firewall_result(args.allow_ports, args.show_status)
+    ok(f"当前防火墙放行端口: {result['allow_ports']}")
+    if result["status"]:
+        print(result["status"])
     return 0
 
 
 def cmd_bbr_status(_: argparse.Namespace) -> int:
     section("BBR 状态")
-    print(f"内核版本: {kernel_release()}")
-    _print_bbr_summary(bbr_status())
+    result = _bbr_status_result()
+    print(f"内核版本: {result['kernel']}")
+    _print_bbr_summary(result["bbr"])
     return 0
 
 
@@ -543,15 +626,13 @@ def cmd_enable_bbr(_: argparse.Namespace) -> int:
 
 def cmd_show_links(_: argparse.Namespace) -> int:
     section("VLESS 地址")
-    manifests = load_node_manifests()
-    if not manifests:
+    result = _show_links_result()
+    if not result["nodes"]:
         warn("未发现已部署节点")
         return 0
-    for payload in manifests:
-        node = _node_from_manifest(payload)
-        server = payload.get("server") or _resolve_server_address(None)
-        print(f"[{payload.get('backend', 'unknown')}] {node.name}")
-        print(export_vless_url(server, node))
+    for item in result["nodes"]:
+        print(f"[{item['backend']}] {item['name']}")
+        print(item["url"])
         print("")
     return 0
 
@@ -563,7 +644,8 @@ def cmd_show_logs(args: argparse.Namespace) -> int:
     service_name = str(payload.get("service_name") or "").strip()
     if not service_name:
         raise CommandError("选中的节点没有可用的 systemd 服务名")
-    print(read_service_logs(service_name, args.lines))
+    result = _show_logs_result(service_name, args.lines)
+    print(result["logs"])
     return 0
 
 
@@ -574,8 +656,6 @@ def cmd_remove_node(args: argparse.Namespace) -> int:
     payload = _select_manifest(manifests, "请选择要删除的节点（默认 1）: ")
     node = payload["node"]
     service_name = str(payload.get("service_name") or "").strip()
-    config_path = _config_path_from_manifest(payload)
-    service_path = _service_path_from_manifest(payload)
     manifest_path = MANIFEST_ROOT / f"{node['tag']}.json"
     print("即将删除：")
     print(f"  节点名称: {node['name']}")
@@ -586,42 +666,26 @@ def cmd_remove_node(args: argparse.Namespace) -> int:
     if confirm != "y":
         warn("已取消删除")
         return 0
+    result = _remove_node_result(str(node["tag"]))
     if service_name:
-        stop_and_disable_service(service_name)
         ok(f"服务已移除: {service_name}")
-    if config_path.exists():
-        config_path.unlink()
-        ok(f"配置已移除: {config_path}")
-    if service_path.exists():
-        service_path.unlink()
-    remove_node_manifest(str(node["tag"]))
-    remaining = load_node_manifests()
-    allow_ports = {
-        22,
-        *detect_ssh_ports(),
-        *collect_manifest_ports(remaining),
-    }
-    enforce_firewall_tcp_allowlist(sorted(allow_ports))
-    ok(f"当前防火墙放行端口: {sorted(allow_ports)}")
+    ok(f"配置已移除: {result['removed']['config']}")
+    ok(f"服务文件已移除: {result['removed']['service_path']}")
+    ok(f"当前防火墙放行端口: {result['allow_ports']}")
     return 0
 
 
 def cmd_show_status(_: argparse.Namespace) -> int:
     section("节点状态")
-    manifests = load_node_manifests()
-    if not manifests:
+    result = _show_status_result()
+    if not result["nodes"]:
         warn("未发现已部署节点")
         return 0
-    _print_bbr_summary(bbr_status())
-    for payload in manifests:
-        node = payload["node"]
-        backend = payload.get("backend", "unknown")
-        service_name = payload.get("service_name", "")
-        active, enabled = systemd_status(service_name)
-        listening = port_is_listening(int(node["listen_port"]))
+    _print_bbr_summary(result["bbr"]["bbr"])
+    for item in result["nodes"]:
         print(
-            f"{node['name']} | 后端={backend} | 服务={service_name} | "
-            f"端口={node['listen_port']} | 运行中={active} | 开机自启={enabled} | 端口监听={listening}"
+            f"{item['name']} | 后端={item['backend']} | 服务={item['service']} | "
+            f"端口={item['port']} | 运行中={item['active']} | 开机自启={item['enabled']} | 端口监听={item['listening']}"
         )
     return 0
 
@@ -665,6 +729,104 @@ def cmd_restore(args: argparse.Namespace) -> int:
     restore_backup(Path(args.archive), Path(args.destination))
     ok(f"已恢复: {args.archive} -> {args.destination}")
     return 0
+
+
+def cmd_backend_detect_region(_: argparse.Namespace) -> int:
+    region, country = _detect_server_region_label()
+    try:
+        server_ip = detect_primary_ipv4()
+    except Exception:
+        server_ip = ""
+    return _json_dump(
+        {
+            "ok": True,
+            "region": region,
+            "country": country or "",
+            "server_ip": server_ip,
+        }
+    )
+
+
+def cmd_backend_recommend_domains(args: argparse.Namespace) -> int:
+    options = _recommended_reality_domains(args.region, limit=args.limit, timeout=args.timeout)
+    return _json_dump(
+        {
+            "ok": True,
+            "region": args.region,
+            "domains": [
+                {
+                    "domain": item.domain,
+                    "latency_ms": int(round((item.ttfb or 0) * 1000)) if item.ttfb is not None else None,
+                    "ok": item.ok,
+                }
+                for item in options
+            ],
+        }
+    )
+
+
+def cmd_backend_list_nodes(_: argparse.Namespace) -> int:
+    return _json_dump({"ok": True, "nodes": [_node_summary(item) for item in load_node_manifests()]})
+
+
+def cmd_backend_show_links(_: argparse.Namespace) -> int:
+    result = _show_links_result()
+    result["ok"] = True
+    return _json_dump(result)
+
+
+def cmd_backend_show_status(_: argparse.Namespace) -> int:
+    result = _show_status_result()
+    result["ok"] = True
+    return _json_dump(result)
+
+
+def cmd_backend_show_logs(args: argparse.Namespace) -> int:
+    service_name = args.service
+    if args.tag:
+        payload = next((item for item in load_node_manifests() if item.get("node", {}).get("tag") == args.tag), None)
+        if not payload:
+            raise CommandError(f"未找到节点: {args.tag}")
+        service_name = str(payload.get("service_name") or "").strip()
+    if not service_name:
+        raise CommandError("必须提供 --service 或 --tag")
+    result = _show_logs_result(service_name, args.lines)
+    result["ok"] = True
+    return _json_dump(result)
+
+
+def cmd_backend_bbr_status(_: argparse.Namespace) -> int:
+    result = _bbr_status_result()
+    result["ok"] = True
+    return _json_dump(result)
+
+
+def cmd_backend_firewall(args: argparse.Namespace) -> int:
+    require_root()
+    result = _firewall_result(args.allow_ports, args.show_status)
+    return _json_dump(result)
+
+
+def cmd_backend_remove_node(args: argparse.Namespace) -> int:
+    require_root()
+    result = _remove_node_result(args.tag)
+    return _json_dump(result)
+
+
+def cmd_backend_deploy_local(args: argparse.Namespace) -> int:
+    require_root()
+    if not args.skip_install_deps:
+        _ensure_dependencies()
+    bbr = ensure_bbr_enabled()
+    if not args.skip_install_backend:
+        install_backend(args.backend, args.backend_version)
+    plan, server = _build_plan_from_args(args)
+    result = _apply_plan_result(plan, server, args)
+    result["bbr"] = {
+        "kernel": kernel_release(),
+        "status": bbr,
+    }
+    return _json_dump(result)
 
 
 def _prompt_choice(prompt: str, valid: set[str], default: str, allow_back: bool = False) -> str:
@@ -852,7 +1014,8 @@ def cmd_menu(_: argparse.Namespace) -> int:
                 raw = _prompt_input("额外放行端口【可留空，逗号分隔】: ").strip() or ""
                 cmd_firewall(argparse.Namespace(allow_ports=raw, show_status=True))
             elif choice == "9":
-                _print_probe_help()
+                print("脚本会按服务器地区自动匹配内置地址池，并直接给出推荐编号。")
+                print("对外默认只开放内置地址池，不让普通用户手填自定义域名。")
             elif choice == "0":
                 return 0
             else:
@@ -968,15 +1131,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     menu = sub.add_parser("menu", help="interactive server-side main menu")
     menu.set_defaults(func=cmd_menu)
-
-    probe = sub.add_parser("probe", help="probe candidate reality domains")
-    probe.add_argument("--region")
-    probe.add_argument("--domains", help=argparse.SUPPRESS)
-    probe.add_argument("--list-regions", action="store_true")
-    probe.add_argument("--server-ip", help="detect built-in region pool from server IP")
-    probe.add_argument("--timeout", type=int, default=6)
-    probe.add_argument("--limit", type=int, default=8)
-    probe.set_defaults(func=cmd_probe)
 
     generate = sub.add_parser("generate", help="generate config, service and exports")
     generate.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")
@@ -1112,6 +1266,66 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--archive", required=True)
     restore.add_argument("--destination", required=True)
     restore.set_defaults(func=cmd_restore)
+
+    backend_detect = sub.add_parser("backend-detect-region", help=argparse.SUPPRESS)
+    backend_detect.set_defaults(func=cmd_backend_detect_region)
+
+    backend_domains = sub.add_parser("backend-recommend-domains", help=argparse.SUPPRESS)
+    backend_domains.add_argument("--region", required=True)
+    backend_domains.add_argument("--limit", type=int, default=3)
+    backend_domains.add_argument("--timeout", type=int, default=6)
+    backend_domains.set_defaults(func=cmd_backend_recommend_domains)
+
+    backend_nodes = sub.add_parser("backend-list-nodes", help=argparse.SUPPRESS)
+    backend_nodes.set_defaults(func=cmd_backend_list_nodes)
+
+    backend_links = sub.add_parser("backend-show-links", help=argparse.SUPPRESS)
+    backend_links.set_defaults(func=cmd_backend_show_links)
+
+    backend_status = sub.add_parser("backend-show-status", help=argparse.SUPPRESS)
+    backend_status.set_defaults(func=cmd_backend_show_status)
+
+    backend_logs = sub.add_parser("backend-show-logs", help=argparse.SUPPRESS)
+    backend_logs.add_argument("--tag")
+    backend_logs.add_argument("--service")
+    backend_logs.add_argument("--lines", type=int, default=80)
+    backend_logs.set_defaults(func=cmd_backend_show_logs)
+
+    backend_bbr = sub.add_parser("backend-bbr-status", help=argparse.SUPPRESS)
+    backend_bbr.set_defaults(func=cmd_backend_bbr_status)
+
+    backend_firewall = sub.add_parser("backend-firewall", help=argparse.SUPPRESS)
+    backend_firewall.add_argument("--allow-ports", default="")
+    backend_firewall.add_argument("--show-status", action="store_true")
+    backend_firewall.set_defaults(func=cmd_backend_firewall)
+
+    backend_remove = sub.add_parser("backend-remove-node", help=argparse.SUPPRESS)
+    backend_remove.add_argument("--tag", required=True)
+    backend_remove.set_defaults(func=cmd_backend_remove_node)
+
+    backend_deploy = sub.add_parser("backend-deploy-local", help=argparse.SUPPRESS)
+    backend_deploy.add_argument("--backend", choices=["sing-box", "xray"], default="sing-box")
+    backend_deploy.add_argument("--role", choices=["main", "media"], required=True)
+    backend_deploy.add_argument("--region", required=True)
+    backend_deploy.add_argument("--server")
+    backend_deploy.add_argument("--port", type=int, required=True)
+    backend_deploy.add_argument("--domain", required=True)
+    backend_deploy.add_argument("--name")
+    backend_deploy.add_argument("--enable-streaming-dns", action="store_true")
+    backend_deploy.add_argument("--streaming-dns")
+    backend_deploy.add_argument("--streaming-profile", choices=sorted(STREAMING_PROFILES), default="common-media")
+    backend_deploy.add_argument("--streaming-domains")
+    backend_deploy.add_argument("--provider-label", default="custom-streaming-dns")
+    backend_deploy.add_argument("--install-root")
+    backend_deploy.add_argument("--binary-name")
+    backend_deploy.add_argument("--service-name")
+    backend_deploy.add_argument("--backup-root", default=str(BACKUP_ROOT))
+    backend_deploy.add_argument("--backend-version", default="latest")
+    backend_deploy.add_argument("--skip-install-deps", action="store_true")
+    backend_deploy.add_argument("--skip-install-backend", action="store_true")
+    backend_deploy.add_argument("--firewall", action=argparse.BooleanOptionalAction, default=True)
+    backend_deploy.add_argument("--extra-allow-ports")
+    backend_deploy.set_defaults(func=cmd_backend_deploy_local)
     return parser
 
 

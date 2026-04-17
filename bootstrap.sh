@@ -96,6 +96,8 @@ tar -xzf "${ARCHIVE_PATH}" -C "${INSTALL_DIR}" --strip-components=1
 
 chmod +x "${INSTALL_DIR}/install.sh"
 chmod +x "${INSTALL_DIR}/bin/sboxctl"
+chmod +x "${INSTALL_DIR}/bin/sboxctl-backend"
+chmod +x "${INSTALL_DIR}/shell/menu.sh"
 
 ok "已解压到 ${INSTALL_DIR}"
 step "正在进入交互菜单"

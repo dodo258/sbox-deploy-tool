@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/dodo258/sbox-deploy-tool/main/boots
 - 删除节点
 - 查看 `BBR` 状态
 - 调整防火墙
-- 查看 `Reality` 域名选择说明
+- 查看 `Reality` 域名说明
 
 ## 二、部署时会让你选择什么
 
@@ -164,4 +164,4 @@ sboxctl import-xray --input <XRAY_JSON> --role <main|media> --region <REGION_LAB
 
 部署流程会根据服务器地区自动匹配内置候选池，并直接给出推荐域名编号，让用户只选 `1 / 2 / 3`。
 
-对外默认只开放内置地区池，不让普通用户手填自定义域名。
+脚本只使用内置地址池，不对普通用户开放手填自定义域名。

@@ -42,6 +42,8 @@ else
 fi
 
 chmod +x "${ROOT_DIR}/bin/sboxctl"
+chmod +x "${ROOT_DIR}/bin/sboxctl-backend"
+chmod +x "${ROOT_DIR}/shell/menu.sh"
 ln -sf "${ROOT_DIR}/bin/sboxctl" /usr/local/bin/sboxctl
 ok "全局命令已就绪: sboxctl"
 

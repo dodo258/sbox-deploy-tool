@@ -34,7 +34,9 @@ sboxctl menu
 
 - `bootstrap.sh`：服务器端 raw 一键入口
 - `install.sh`：启动脚本
-- `bin/sboxctl`：主命令入口
+- `bin/sboxctl`：用户主命令入口
+- `bin/sboxctl-backend`：Python 后台能力入口
+- `shell/menu.sh`：Shell 交互菜单
 - `docs/USAGE.md`：中文使用说明
 - `docs/ROADMAP.md`：开发路线
 

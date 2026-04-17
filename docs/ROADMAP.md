@@ -11,7 +11,7 @@
 - strict firewall lockdown
 - BBR auto-check and auto-enable
 - node manifest + link/status commands
-- local Reality probe scripts for macOS/Linux and Windows
+- built-in Reality candidate pools with automatic server-side recommendation
 - unit tests
 
 ## v0.2

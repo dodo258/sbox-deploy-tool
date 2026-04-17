@@ -9,7 +9,7 @@ from unittest import mock
 from sbox_tool.config_gen import build_config, build_service, write_json
 from sbox_tool.cli import BackToMenu, _build_streaming_dns, _prompt_choice, _prompt_reality_domain, _recommended_reality_domains
 from sbox_tool.crypto import generate_reality_keys, reality_keys_from_existing
-from sbox_tool.domain_probe import ProbeResult, available_regions, candidate_pool_for_region, parse_domain_list
+from sbox_tool.domain_probe import ProbeResult, candidate_pool_for_region
 from sbox_tool.exports import export_mihomo_proxy, export_vless_url
 from sbox_tool.geo import map_country_to_probe_region
 from sbox_tool.models import DeployPlan, NodeSpec, StreamingDnsSpec
@@ -178,15 +178,9 @@ class GenerationTests(unittest.TestCase):
             path.write_text(_render_iptables_rules([22, 8443], ipv6=False))
             self.assertEqual(load_firewall_ports(path), [22, 8443])
 
-    def test_available_regions_and_domain_parse(self) -> None:
-        regions = available_regions()
-        self.assertIn("eu", regions)
-        self.assertIn("latam", regions)
-        self.assertEqual(parse_domain_list("a.example.com, b.example.com"), ["a.example.com", "b.example.com"])
-
     def test_candidate_pool_for_region_uses_fallback_groups(self) -> None:
         hk_pool = candidate_pool_for_region("hk")
-        self.assertIn("www.mannings.com.hk", hk_pool)
+        self.assertIn("www.hktdc.com", hk_pool)
         self.assertIn("www.dell.com", hk_pool)
         self.assertNotIn("www.momoshop.com.tw", hk_pool)
 
@@ -196,9 +190,9 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(map_country_to_probe_region(None, "AF"), "africa")
 
     @mock.patch("sbox_tool.cli.rank_domains")
-    @mock.patch("sbox_tool.cli.load_candidates")
-    def test_recommended_reality_domains_prefers_ok_results(self, load_candidates_mock: mock.Mock, rank_domains_mock: mock.Mock) -> None:
-        load_candidates_mock.return_value = {"eu": ["a.example", "b.example", "c.example"]}
+    @mock.patch("sbox_tool.cli.candidate_pool_for_region")
+    def test_recommended_reality_domains_prefers_ok_results(self, pool_mock: mock.Mock, rank_domains_mock: mock.Mock) -> None:
+        pool_mock.return_value = ["a.example", "b.example", "c.example"]
         rank_domains_mock.return_value = [
             ProbeResult("b.example", True, True, True, 200, 0.2),
             ProbeResult("a.example", False, True, False, None, None, "failed"),

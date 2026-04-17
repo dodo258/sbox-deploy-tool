@@ -13,23 +13,11 @@ while [ -L "$SOURCE" ]; do
 done
 
 ROOT_DIR="$(cd "$(dirname "$SOURCE")/.." && pwd)"
-BACKEND_BIN="${ROOT_DIR}/bin/sboxctl-backend"
-MENU_BIN="${ROOT_DIR}/shell/menu.sh"
+export PYTHONPATH="${ROOT_DIR}/lib:${PYTHONPATH:-}"
 
-if [[ $# -eq 0 ]]; then
-  exec "${MENU_BIN}"
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required"
+  exit 1
 fi
 
-case "${1}" in
-  menu)
-    shift
-    exec "${MENU_BIN}" "$@"
-    ;;
-  init)
-    shift
-    exec "${MENU_BIN}" --init "$@"
-    ;;
-  *)
-    exec "${BACKEND_BIN}" "$@"
-    ;;
-esac
+exec python3 -m sbox_tool.cli "$@"

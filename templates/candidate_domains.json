@@ -7,7 +7,11 @@
     "www.lenovo.com",
     "www.acer.com",
     "www.asus.com",
-    "www.canon.com"
+    "www.canon.com",
+    "www.samsung.com",
+    "www.sony.com",
+    "www.nike.com",
+    "www.adobe.com"
   ],
   "us": [
     "www.zoro.com",
@@ -65,13 +69,15 @@
     "www.lotteon.com"
   ],
   "hk": [
-    "www.mannings.com.hk",
-    "www.watsons.com.hk",
     "www.hktdc.com",
     "www.hongkongairport.com",
     "www.pccw.com",
+    "www.dell.com",
     "www.lenovo.com",
-    "www.hp.com"
+    "www.hp.com",
+    "www.ikea.com",
+    "www.canon.com",
+    "www.asus.com"
   ],
   "tw": [
     "24h.pchome.com.tw",
