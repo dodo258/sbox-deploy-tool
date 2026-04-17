@@ -221,14 +221,33 @@ select_node() {
 }
 
 select_streaming_node() {
-  local nodes_json lines choice default_choice
+  local nodes_json lines choice default_choice line_count
   nodes_json="$(run_backend_json backend-list-nodes)" || return 1
   lines="$(json_print "$nodes_json" nodes)"
   if [[ -z "$lines" ]]; then
     warn "未发现已部署节点"
     return 1
   fi
+  line_count="$(printf '%s\n' "$lines" | grep -c . || true)"
   default_choice="1"
+  if [[ "$line_count" == "1" ]]; then
+    local selected_single label_single role_single streaming_single name_single
+    selected_single="$(printf '%s\n' "$lines" | head -n 1)"
+    role_single="$(printf '%s' "$selected_single" | awk -F '\t' '{print $7}')"
+    streaming_single="$(printf '%s' "$selected_single" | awk -F '\t' '{print $8}')"
+    name_single="$(printf '%s' "$selected_single" | awk -F '\t' '{print $3}')"
+    if [[ "$role_single" == "media" ]]; then
+      label_single="流媒体专用节点"
+    elif [[ "$streaming_single" == "True" || "$streaming_single" == "true" ]]; then
+      label_single="主节点 + 流媒体解锁"
+    else
+      label_single="主节点"
+    fi
+    echo "当前可修改节点：${name_single}（${label_single}）"
+    printf '%s' "$selected_single"
+    return 0
+  fi
+  echo "可修改的节点："
   while IFS=$'\t' read -r idx tag name backend port service role streaming_enabled; do
     local label
     if [[ "$role" == "media" ]]; then
